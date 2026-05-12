@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reportes - TML</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body>
+    <div class="admin-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>TML Admin</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item">↶ Volver</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <section class="content-section active">
+                <h1>Reportes</h1>
+                <p style="color: #666; margin-top: 20px;">
+                    Los reportes están disponibles en el Dashboard.
+                </p>
+                <a href="/dashboard" style="display: inline-block; margin-top: 20px; padding: 12px 24px; background: #4472C4; color: white; border-radius: 8px; text-decoration: none;">Ir al Dashboard</a>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

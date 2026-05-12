@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TML - Cronómetro de Rutas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>⏱️ Medidor de Rutas</h1>
+            <p class="subtitle">Controla los tiempos de salida</p>
+        </header>
+
+        <!-- Selector de ruta -->
+        <div class="section">
+            <label for="numeroRuta" class="label">Número de Ruta</label>
+            <div class="input-group">
+                <div style="display: flex; align-items: center; flex: 1;">
+                    <span style="font-weight: bold; color: #4472C4; margin-right: 8px; font-size: 16px;">DS00</span>
+                    <input type="text" id="numeroRuta" placeholder="Ej: 23" class="input" style="flex: 1;" inputmode="numeric" maxlength="4">
+                </div>
+                <button id="btnNuevaRuta" class="btn btn-primary">Iniciar</button>
+            </div>
+        </div>
+
+        <!-- Cronómetro actual -->
+        <div class="section">
+            <div id="cronometroActual" class="cronometro-display">
+                <div class="tiempo-actual">00:00:00</div>
+                <div class="etapa-actual">Esperando ruta...</div>
+            </div>
+        </div>
+
+        <!-- Etapas -->
+        <div class="section">
+            <h2 class="section-title">Etapas de la Ruta</h2>
+            <div id="etapasContainer" class="etapas-grid">
+                <!-- Se llenará dinámicamente -->
+            </div>
+        </div>
+
+        <!-- Resumen -->
+        <div class="section">
+            <div class="resumen-box">
+                <div class="resumen-item">
+                    <span class="resumen-label">Etapas Completadas:</span>
+                    <span id="etapasCompletadas" class="resumen-valor">0/5</span>
+                </div>
+                <div class="resumen-item">
+                    <span class="resumen-label">Tiempo Total:</span>
+                    <span id="tiempoTotal" class="resumen-valor">00:00:00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notas -->
+        <div class="section">
+            <label for="notasRuta" class="label">Notas (Opcional)</label>
+            <textarea id="notasRuta" class="textarea" placeholder="Añade observaciones sobre la ruta..."></textarea>
+        </div>
+
+        <!-- Botones de acción -->
+        <div class="section">
+            <button id="btnGuardar" class="btn btn-success btn-block">✓ Guardar Ruta</button>
+            <button id="btnCancelar" class="btn btn-danger btn-block">✗ Cancelar</button>
+            <a href="/dashboard" class="btn btn-info btn-block">📊 Panel Admin</a>
+        </div>
+    </div>
+
+    <!-- Modal para alertas -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalTitle"></h2>
+            <p id="modalMessage"></p>
+            <button id="modalBtn" class="btn btn-primary">OK</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/mobile.js') }}"></script>
+</body>
+</html>

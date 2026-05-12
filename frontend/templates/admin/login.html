@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Admin - TML</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body class="login-page">
+    <main class="login-shell">
+        <section class="login-panel">
+            <div class="login-brand">
+                <h1>TML Admin</h1>
+                <p>Acceso restringido a historial, reportes y analisis.</p>
+            </div>
+
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+
+            <form method="POST" class="login-form">
+                <input type="hidden" name="next" value="{{ next_url }}">
+                <label for="email">Correo</label>
+                <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+
+                <label for="password">Contrasena</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+                <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
+            </form>
+
+            <a href="/" class="login-back">Volver al medidor de rutas</a>
+        </section>
+    </main>
+</body>
+</html>

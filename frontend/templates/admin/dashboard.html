@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Administrador - TML</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>TML Admin</h2>
+                <p class="admin-user">{{ session.get('admin_nombre', 'Admin') }}</p>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-section="dashboard">📊 Dashboard</a>
+                <a href="#historial" class="nav-item" data-section="historial">📚 Historial</a>
+                <a href="#rutas" class="nav-item" data-section="rutas">📋 Rutas</a>
+                <a href="#reportes" class="nav-item" data-section="reportes">📈 Reportes</a>
+                <a href="#maestro" class="nav-item" data-section="maestro">🧭 Rutas Fijas</a>
+                <a href="#herramientas" class="nav-item" data-section="herramientas">⚙️ Herramientas</a>
+                <a href="/" class="nav-item">↶ Volver a Móvil</a>
+                <a href="/logout" class="nav-item">Cerrar sesión</a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="content-section active">
+                <h1>Dashboard</h1>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Rutas Totales</h3>
+                        <p id="statRutasTotales" class="stat-value">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Completadas</h3>
+                        <p id="statRutasCompletadas" class="stat-value">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Tasa Completación</h3>
+                        <p id="statTasaCompletacion" class="stat-value">0%</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Usuarios Activos</h3>
+                        <p id="statUsuariosActivos" class="stat-value">0</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Tiempo Promedio Ruta</h3>
+                        <p id="statTiempoPromedio" class="stat-value stat-time">00:00:00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Cuello de Botella</h3>
+                        <p id="statCuelloBotella" class="stat-value stat-text">-</p>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-box">
+                        <h3>Promedios por Etapa (minutos)</h3>
+                        <canvas id="chartPromedios"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Rutas por Día (últimos 7 días)</h3>
+                        <canvas id="chartRutasDiarias"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Estado de Rutas</h3>
+                        <canvas id="chartEstados"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Actividad por Hora</h3>
+                        <canvas id="chartHoras"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Rutas por Supervisor</h3>
+                        <canvas id="chartSupervisores"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Rutas por Contratista</h3>
+                        <canvas id="chartContratistas"></canvas>
+                    </div>
+                </div>
+
+                <div class="insights-grid">
+                    <div class="insight-panel">
+                        <h3>Lecturas Clave</h3>
+                        <div id="listaInsights" class="insight-list"></div>
+                    </div>
+                    <div class="insight-panel">
+                        <h3>Rutas que Requieren Atención</h3>
+                        <div id="listaRutasAtencion" class="attention-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Rutas Section -->
+            <section id="rutas" class="content-section">
+                <h1>Gestión de Rutas</h1>
+                
+                <div class="filter-section">
+                    <input type="text" id="filtroRutasUsuario" placeholder="Filtrar por usuario..." class="filter-input">
+                    <select id="filtroRutasEstado" class="filter-input">
+                        <option value="">Todos los estados</option>
+                        <option value="activa">Activa</option>
+                        <option value="completada">Completada</option>
+                        <option value="cancelada">Cancelada</option>
+                    </select>
+                    <select id="filtroRutasSupervisor" class="filter-input">
+                        <option value="">Todos los supervisores</option>
+                    </select>
+                    <select id="filtroRutasContratista" class="filter-input">
+                        <option value="">Todos los contratistas</option>
+                    </select>
+                    <input type="date" id="filtroRutasFecha" class="filter-input">
+                    <button id="btnDescargarExcel" class="btn btn-success">📥 Descargar Excel</button>
+                </div>
+
+                <div class="table-container">
+                    <table id="tablasRutas" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Ruta</th>
+                                <th>Supervisor</th>
+                                <th>Contratista</th>
+                                <th>Usuario</th>
+                                <th>Fecha</th>
+                                <th>Estado</th>
+                                <th>Matinal</th>
+                                <th>Impresión</th>
+                                <th>Conteo</th>
+                                <th>Check Salida</th>
+                                <th>Pánico</th>
+                                <th>Total</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bodyTablaRutas">
+                            <tr>
+                                <td colspan="14" class="loading">Cargando rutas...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Historial Section -->
+            <section id="historial" class="content-section">
+                <h1>Historial Administrativo</h1>
+                <div class="filter-section">
+                    <select id="filtroHistorialEstado" class="filter-input">
+                        <option value="">Todos los estados</option>
+                        <option value="activa">Activa</option>
+                        <option value="completada">Completada</option>
+                        <option value="cancelada">Cancelada</option>
+                    </select>
+                    <select id="filtroHistorialSupervisor" class="filter-input">
+                        <option value="">Todos los supervisores</option>
+                    </select>
+                    <input type="date" id="filtroHistorialFecha" class="filter-input">
+                </div>
+                <div id="historialAdminLista" class="history-grid"></div>
+            </section>
+
+            <!-- Reportes Section -->
+            <section id="reportes" class="content-section">
+                <h1>Reportes y Análisis</h1>
+                
+                <div class="report-box">
+                    <h3>Rendimiento por Etapa</h3>
+                    <div class="table-container">
+                        <table id="tablaReportes" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Etapa</th>
+                                    <th>Promedio</th>
+                                    <th>Mínimo</th>
+                                    <th>Máximo</th>
+                                    <th>Registros</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bodyTablaReportes">
+                                <tr>
+                                    <td colspan="5" class="loading">Cargando reportes...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="chart-box" style="margin-top: 30px;">
+                    <h3>Comparativa de Tiempos por Etapa</h3>
+                    <canvas id="chartComparativa"></canvas>
+                </div>
+            </section>
+
+            <!-- Maestro Section -->
+            <section id="maestro" class="content-section">
+                <h1>Base de Rutas Fijas</h1>
+                <div class="filter-section">
+                    <button id="btnImportarRutasFijas" class="btn btn-primary">Importar Rutas fijas Mayo.xlsx</button>
+                    <span id="estadoImportacion" class="inline-status"></span>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ruta</th>
+                                <th>Supervisor</th>
+                                <th>Contratista</th>
+                                <th>Canal</th>
+                                <th>Estatus</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bodyTablaRutasFijas">
+                            <tr><td colspan="5" class="loading">Cargando base...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Herramientas Section -->
+            <section id="herramientas" class="content-section">
+                <h1>Herramientas Administrativas</h1>
+                <div class="danger-zone">
+                    <h3>Limpieza de datos</h3>
+                    <p>Elimina todas las rutas medidas y sus etapas. No borra usuarios admin ni la base de rutas fijas.</p>
+                    <button id="btnLimpiarDatos" class="btn btn-danger">Borrar datos de rutas</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal para detalles de ruta -->
+    <div id="modalDetallesRuta" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close">&times;</span>
+            <h2>Detalles de Ruta</h2>
+            <div id="detallesRutaContenido"></div>
+            <button class="btn btn-secondary" onclick="cerrarModalDetalles()">Cerrar</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+</body>
+</html>

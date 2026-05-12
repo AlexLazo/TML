@@ -1,0 +1,439 @@
+/* ==================== VARIABLES Y RESET ==================== */
+:root {
+    --primary-color: #4472C4;
+    --secondary-color: #70AD47;
+    --danger-color: #E74C3C;
+    --info-color: #3498DB;
+    --warning-color: #F39C12;
+    --dark: #2C3E50;
+    --light: #ECF0F1;
+    --border-radius: 8px;
+    --box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    --transition: all 0.3s ease;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 10px;
+}
+
+/* ==================== CONTAINER ==================== */
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    overflow: hidden;
+}
+
+/* ==================== HEADER ==================== */
+.header {
+    background: linear-gradient(135deg, var(--primary-color), var(--info-color));
+    color: white;
+    padding: 30px 20px;
+    text-align: center;
+}
+
+.header h1 {
+    font-size: 32px;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.header .subtitle {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* ==================== SECTIONS ==================== */
+.section {
+    padding: 20px;
+    border-bottom: 1px solid var(--light);
+}
+
+.section:last-child {
+    border-bottom: none;
+}
+
+.section-title {
+    font-size: 18px;
+    color: var(--dark);
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+/* ==================== LABELS Y INPUTS ==================== */
+.label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 8px;
+}
+
+.input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.input {
+    flex: 1;
+    padding: 12px;
+    border: 2px solid var(--light);
+    border-radius: var(--border-radius);
+    font-size: 16px;
+    transition: var(--transition);
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(68, 114, 196, 0.1);
+}
+
+.textarea {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid var(--light);
+    border-radius: var(--border-radius);
+    font-size: 14px;
+    font-family: inherit;
+    min-height: 100px;
+    resize: vertical;
+    transition: var(--transition);
+}
+
+.textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(68, 114, 196, 0.1);
+}
+
+/* ==================== BOTONES ==================== */
+.btn {
+    padding: 12px 20px;
+    border: none;
+    border-radius: var(--border-radius);
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #3858a8;
+    box-shadow: var(--box-shadow);
+    transform: translateY(-2px);
+}
+
+.btn-secondary {
+    background: #95A5A6;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #7F8C8D;
+    transform: translateY(-2px);
+}
+
+.btn-success {
+    background: var(--secondary-color);
+    color: white;
+}
+
+.btn-success:hover {
+    background: #5a8a38;
+    transform: translateY(-2px);
+}
+
+.btn-danger {
+    background: var(--danger-color);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c0392b;
+    transform: translateY(-2px);
+}
+
+.btn-info {
+    background: var(--info-color);
+    color: white;
+}
+
+.btn-info:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+}
+
+.btn-block {
+    width: 100%;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.btn-block:last-child {
+    margin-bottom: 0;
+}
+
+/* ==================== CRONÓMETRO ==================== */
+.cronometro-display {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    padding: 40px 20px;
+    border-radius: var(--border-radius);
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.tiempo-actual {
+    font-size: 56px;
+    font-weight: bold;
+    color: var(--primary-color);
+    font-family: 'Courier New', monospace;
+    margin-bottom: 10px;
+    letter-spacing: 3px;
+}
+
+.etapa-actual {
+    font-size: 18px;
+    color: var(--dark);
+    font-weight: 500;
+}
+
+/* ==================== ETAPAS GRID ==================== */
+.etapas-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.etapa-card {
+    background: #f8f9fa;
+    border: 2px solid var(--light);
+    border-radius: var(--border-radius);
+    padding: 15px;
+    transition: var(--transition);
+    cursor: pointer;
+}
+
+.etapa-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(68, 114, 196, 0.15);
+}
+
+.etapa-card.completada {
+    background: #d4edda;
+    border-color: var(--secondary-color);
+}
+
+.etapa-card.activa {
+    background: #fff3cd;
+    border-color: var(--warning-color);
+    animation: pulse 1s infinite;
+}
+
+.etapa-nombre {
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 8px;
+}
+
+.etapa-tiempo {
+    font-size: 24px;
+    font-family: 'Courier New', monospace;
+    color: var(--primary-color);
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+.etapa-botones {
+    display: flex;
+    gap: 8px;
+}
+
+.etapa-btn {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.btn-iniciar {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-parar {
+    background: var(--danger-color);
+    color: white;
+}
+
+.btn-reiniciar {
+    background: var(--warning-color);
+    color: white;
+}
+
+.etapa-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+}
+
+.etapa-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.etapa-btn:disabled:hover {
+    opacity: 0.45;
+    transform: none;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
+/* ==================== RESUMEN ==================== */
+.resumen-box {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: var(--border-radius);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.resumen-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.resumen-label {
+    font-size: 12px;
+    opacity: 0.9;
+    margin-bottom: 5px;
+}
+
+.resumen-valor {
+    font-size: 24px;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+}
+
+/* ==================== MODAL ==================== */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+    background-color: white;
+    margin: 50% auto;
+    padding: 30px;
+    border-radius: var(--border-radius);
+    width: 80%;
+    max-width: 400px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+.modal-content h2 {
+    color: var(--dark);
+    margin-bottom: 15px;
+}
+
+.modal-content p {
+    color: #666;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: var(--dark);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from {
+        margin-top: 100px;
+        opacity: 0;
+    }
+    to {
+        margin-top: 0;
+        opacity: 1;
+    }
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 600px) {
+    .tiempo-actual {
+        font-size: 42px;
+    }
+
+    .header h1 {
+        font-size: 24px;
+    }
+
+    .resumen-box {
+        grid-template-columns: 1fr;
+    }
+
+    .etapas-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==================== LOADING ==================== */
+.loading {
+    text-align: center;
+    color: #999;
+    padding: 20px;
+}

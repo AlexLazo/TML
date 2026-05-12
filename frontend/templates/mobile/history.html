@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historial de Rutas - TML</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>📋 Historial de Rutas</h1>
+            <p class="subtitle">Consulta administrativa de registros</p>
+        </header>
+
+        <!-- Filtros -->
+        <div class="section">
+            <h3 class="section-title">Filtros</h3>
+            <div class="filter-group">
+                <label for="filtroUsuario" class="label">Usuario:</label>
+                <select id="filtroUsuario" class="input">
+                    <option value="">Todos</option>
+                </select>
+                
+                <label for="filtroEstado" class="label">Estado:</label>
+                <select id="filtroEstado" class="input">
+                    <option value="">Todos</option>
+                    <option value="activa">Activa</option>
+                    <option value="completada">Completada</option>
+                    <option value="cancelada">Cancelada</option>
+                </select>
+
+                <button id="btnAplicarFiltro" class="btn btn-primary">Filtrar</button>
+            </div>
+        </div>
+
+        <!-- Lista de rutas -->
+        <div class="section">
+            <h2 class="section-title">Rutas</h2>
+            <div id="listadoRutas" class="historial-list">
+                <p class="loading">Cargando rutas...</p>
+            </div>
+        </div>
+
+        <!-- Botones de navegación -->
+        <div class="section">
+            <a href="/" class="btn btn-primary btn-block">↶ Atrás</a>
+            <a href="/dashboard" class="btn btn-info btn-block">📊 Panel Admin</a>
+            <a href="/logout" class="btn btn-secondary btn-block">Cerrar sesión</a>
+        </div>
+    </div>
+
+    <!-- Modal para detalles -->
+    <div id="modalDetalles" class="modal">
+        <div class="modal-content modal-large">
+            <span class="close">&times;</span>
+            <h2 id="modalTitulo"></h2>
+            <div id="modalDetallesContenido"></div>
+            <button class="btn btn-secondary" onclick="cerrarModal()">Cerrar</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/history.js') }}"></script>
+</body>
+</html>

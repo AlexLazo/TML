@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
+<body data-role="{{ session.get('rol') }}">
     <div class="admin-container">
         <!-- Sidebar -->
         <aside class="sidebar">
@@ -21,7 +21,10 @@
                 <a href="#rutas" class="nav-item" data-section="rutas">📋 Rutas</a>
                 <a href="#reportes" class="nav-item" data-section="reportes">📈 Reportes</a>
                 <a href="#maestro" class="nav-item" data-section="maestro">🧭 Rutas Fijas</a>
+                {% if session.get('rol') == 'admin' %}
+                <a href="#usuarios" class="nav-item" data-section="usuarios">👥 Usuarios</a>
                 <a href="#herramientas" class="nav-item" data-section="herramientas">⚙️ Herramientas</a>
+                {% endif %}
                 <a href="/" class="nav-item">↶ Volver a Móvil</a>
                 <a href="/logout" class="nav-item">Cerrar sesión</a>
             </nav>
@@ -32,7 +35,29 @@
             <!-- Dashboard Section -->
             <section id="dashboard" class="content-section active">
                 <h1>Dashboard</h1>
-                
+
+                <div class="filter-section">
+                    <select id="dashboardFiltroPeriodo" class="filter-input">
+                        <option value="7">Últimos 7 días</option>
+                        <option value="15">Últimos 15 días</option>
+                        <option value="30" selected>Últimos 30 días</option>
+                        <option value="90">Últimos 90 días</option>
+                    </select>
+                    <select id="dashboardFiltroEstado" class="filter-input">
+                        <option value="">Todos los estados</option>
+                        <option value="activa">Activa</option>
+                        <option value="completada">Completada</option>
+                        <option value="cancelada">Cancelada</option>
+                    </select>
+                    <select id="dashboardFiltroSupervisor" class="filter-input">
+                        <option value="">Todos los supervisores</option>
+                    </select>
+                    <select id="dashboardFiltroContratista" class="filter-input">
+                        <option value="">Todos los contratistas</option>
+                    </select>
+                    <button id="btnDashboardRefrescar" class="btn btn-primary">Actualizar</button>
+                </div>
+
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h3>Rutas Totales</h3>
@@ -53,6 +78,10 @@
                     <div class="stat-card">
                         <h3>Tiempo Promedio Ruta</h3>
                         <p id="statTiempoPromedio" class="stat-value stat-time">00:00:00</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Tiempo en Fila</h3>
+                        <p id="statTiempoColaPromedio" class="stat-value stat-time">00:00:00</p>
                     </div>
                     <div class="stat-card">
                         <h3>Cuello de Botella</h3>
@@ -78,12 +107,20 @@
                         <canvas id="chartHoras"></canvas>
                     </div>
                     <div class="chart-box">
+                        <h3>Tiempo en Fila por Supervisor</h3>
+                        <canvas id="chartColaSupervisores"></canvas>
+                    </div>
+                    <div class="chart-box">
                         <h3>Rutas por Supervisor</h3>
                         <canvas id="chartSupervisores"></canvas>
                     </div>
                     <div class="chart-box">
                         <h3>Rutas por Contratista</h3>
                         <canvas id="chartContratistas"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Disponibilidad de Tiempo en Fila</h3>
+                        <canvas id="chartTiempoCola"></canvas>
                     </div>
                 </div>
 
@@ -133,10 +170,10 @@
                                 <th>Fecha</th>
                                 <th>Estado</th>
                                 <th>Matinal</th>
-                                <th>Impresión</th>
                                 <th>Conteo</th>
                                 <th>Check Salida</th>
                                 <th>Pánico</th>
+                                <th>Tiempo en Fila</th>
                                 <th>Total</th>
                                 <th>Acciones</th>
                             </tr>
@@ -204,8 +241,12 @@
             <section id="maestro" class="content-section">
                 <h1>Base de Rutas Fijas</h1>
                 <div class="filter-section">
+                    {% if session.get('rol') == 'admin' %}
                     <button id="btnImportarRutasFijas" class="btn btn-primary">Importar Rutas fijas Mayo.xlsx</button>
                     <span id="estadoImportacion" class="inline-status"></span>
+                    {% else %}
+                    <span class="inline-status">Solo administradores pueden importar rutas fijas.</span>
+                    {% endif %}
                 </div>
                 <div class="table-container">
                     <table class="data-table">
@@ -220,6 +261,44 @@
                         </thead>
                         <tbody id="bodyTablaRutasFijas">
                             <tr><td colspan="5" class="loading">Cargando base...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Usuarios Section -->
+            <section id="usuarios" class="content-section">
+                <h1>Usuarios y Roles</h1>
+                <div class="user-form">
+                    <input type="hidden" id="usuarioId">
+                    <input type="text" id="usuarioNombre" class="filter-input" placeholder="Nombre">
+                    <input type="email" id="usuarioEmail" class="filter-input" placeholder="Correo">
+                    <input type="password" id="usuarioPassword" class="filter-input" placeholder="Contraseña">
+                    <select id="usuarioRol" class="filter-input">
+                        <option value="operador">Operador</option>
+                        <option value="supervisor">Supervisor</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <label class="check-inline">
+                        <input type="checkbox" id="usuarioActivo" checked>
+                        Activo
+                    </label>
+                    <button id="btnGuardarUsuario" class="btn btn-primary">Guardar usuario</button>
+                    <button id="btnCancelarUsuario" class="btn btn-secondary">Limpiar</button>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Email</th>
+                                <th>Rol</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bodyTablaUsuarios">
+                            <tr><td colspan="5" class="loading">Cargando usuarios...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -244,6 +323,17 @@
             <h2>Detalles de Ruta</h2>
             <div id="detallesRutaContenido"></div>
             <button class="btn btn-secondary" onclick="cerrarModalDetalles()">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- Modal para ampliar gráficos -->
+    <div id="modalGraficoAmpliado" class="modal chart-modal">
+        <div class="modal-content chart-modal-content">
+            <div class="chart-modal-header">
+                <h2 id="tituloGraficoAmpliado">Gráfico</h2>
+                <button type="button" id="btnCerrarGraficoAmpliado" class="chart-modal-close" aria-label="Cerrar gráfico ampliado">&times;</button>
+            </div>
+            <div id="contenedorGraficoAmpliado" class="chart-modal-body"></div>
         </div>
     </div>
 

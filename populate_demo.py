@@ -34,7 +34,7 @@ def seed_demo_data():
             print("✓ Usuario demo creado")
         
         # Crear rutas de ejemplo
-        etapas_nombres = ['Matinal', 'Impresión de Previsita', 'Conteo de Carga', 'Check de Salida', 'Botón de Pánico']
+        etapas_nombres = ['Matinal', 'Conteo de Carga', 'Check de Salida', 'Botón de Pánico']
         
         for i in range(1, 6):
             ruta = Ruta(

@@ -5,6 +5,8 @@ let etapasEstado = [];
 let solicitudesEnCurso = new Set();
 let intervalosCronometro = {};
 const API_BASE = '/api';
+const RUTA_ACTIVA_KEY = 'tml_ruta_activa_id';
+const RUTA_NOTAS_KEY = 'tml_ruta_activa_notas';
 
 // ==================== ELEMENTOS DEL DOM ====================
 const numeroRutaInput = document.getElementById('numeroRuta');
@@ -26,17 +28,13 @@ const closeBtn = document.querySelector('.close');
 
 // ==================== EVENT LISTENERS ====================
 numeroRutaInput.addEventListener('input', function() {
-    // Filtrar solo números
-    this.value = this.value.replace(/[^0-9]/g, '');
-    // Limitar a 4 dígitos
-    if (this.value.length > 4) {
-        this.value = this.value.slice(0, 4);
-    }
+    this.value = normalizarCodigoRuta(this.value);
 });
 
 btnNuevaRuta.addEventListener('click', iniciarNuevaRuta);
 btnGuardar.addEventListener('click', guardarRuta);
 btnCancelar.addEventListener('click', cancelarRuta);
+notasRutaTextarea.addEventListener('input', guardarNotasLocales);
 closeBtn.addEventListener('click', cerrarModal);
 window.addEventListener('click', (e) => {
     if (e.target === modal) cerrarModal();
@@ -44,11 +42,64 @@ window.addEventListener('click', (e) => {
 
 // ==================== FUNCIONES PRINCIPALES ====================
 
+function normalizarCodigoRuta(valor) {
+    const limpio = valor.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!limpio) return '';
+
+    const primerCaracter = limpio.charAt(0);
+    const patron = /[0-9]/.test(primerCaracter) ? /[^0-9]/g : /[^A-Z]/g;
+    return limpio.replace(patron, '').slice(0, 2);
+}
+
+function codigoRutaValido(codigo) {
+    return /^([0-9]{1,2}|[A-Z]{1,2})$/.test(codigo);
+}
+
+function persistirRutaActiva(rutaId) {
+    localStorage.setItem(RUTA_ACTIVA_KEY, String(rutaId));
+}
+
+function limpiarRutaActivaPersistida() {
+    localStorage.removeItem(RUTA_ACTIVA_KEY);
+    localStorage.removeItem(RUTA_NOTAS_KEY);
+}
+
+function guardarNotasLocales() {
+    if (rutaActual?.id) {
+        localStorage.setItem(RUTA_NOTAS_KEY, notasRutaTextarea.value);
+    }
+}
+
+async function restaurarRutaActiva() {
+    const rutaId = localStorage.getItem(RUTA_ACTIVA_KEY);
+    if (!rutaId) return;
+
+    try {
+        await cargarEtapas(rutaId);
+
+        if (!rutaActual || rutaActual.estado !== 'activa') {
+            limpiarRutaActivaPersistida();
+            resetearFormulario();
+            return;
+        }
+
+        numeroRutaInput.value = rutaActual.numero_ruta.replace(/^DS00/i, '');
+        numeroRutaInput.disabled = true;
+        btnNuevaRuta.disabled = true;
+        notasRutaTextarea.value = localStorage.getItem(RUTA_NOTAS_KEY) || rutaActual.notas || '';
+        mostrarAlerta('Ruta restaurada', `Se mantuvo activa la ruta ${rutaActual.numero_ruta}`);
+    } catch (error) {
+        console.error('Error al restaurar ruta activa:', error);
+        limpiarRutaActivaPersistida();
+    }
+}
+
 async function iniciarNuevaRuta() {
-    const numeroDigitos = numeroRutaInput.value.trim();
+    const numeroDigitos = normalizarCodigoRuta(numeroRutaInput.value.trim());
+    numeroRutaInput.value = numeroDigitos;
     
-    if (!numeroDigitos || numeroDigitos.length === 0) {
-        mostrarAlerta('Error', 'Por favor ingresa el número de ruta (ej: 23)');
+    if (!codigoRutaValido(numeroDigitos)) {
+        mostrarAlerta('Error', 'Ingresa un maximo de 2 numeros o 2 letras. Ej: 50, DE, DH, 12, 13');
         return;
     }
 
@@ -66,8 +117,14 @@ async function iniciarNuevaRuta() {
             })
         });
 
+        if (!response.ok) {
+            throw new Error(await leerErrorApi(response, 'No se pudo crear la ruta'));
+        }
+
         const data = await response.json();
         rutaActual = data;
+        persistirRutaActiva(data.id);
+        localStorage.removeItem(RUTA_NOTAS_KEY);
         
         // Cargar etapas
         await cargarEtapas(data.id);
@@ -103,6 +160,9 @@ async function cargarEtapas(rutaId) {
         });
         
         actualizarControlesEtapas();
+        actualizarTiempoEnFila();
+        await iniciarTiempoEnFilaAutomatico();
+        restaurarCronometroActivo();
         actualizarResumen();
     } catch (error) {
         console.error('Error al cargar etapas:', error);
@@ -144,8 +204,48 @@ function obtenerEstadoEtapa(etapaId) {
     return etapasEstado.find(etapa => etapa.id === Number(etapaId));
 }
 
+function obtenerEtapaPorNombre(nombre) {
+    return etapasEstado.find(etapa => etapa.nombre === nombre);
+}
+
+function formatearSegundos(segundos) {
+    const horas = Math.floor(segundos / 3600);
+    const minutos = Math.floor((segundos % 3600) / 60);
+    const segs = segundos % 60;
+    return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segs).padStart(2, '0')}`;
+}
+
+function parseFechaApi(fecha) {
+    if (!fecha) return null;
+    const tieneZonaHoraria = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(fecha);
+    const normalizada = tieneZonaHoraria ? fecha : `${fecha}Z`;
+    const timestamp = new Date(normalizada).getTime();
+    return Number.isNaN(timestamp) ? null : timestamp;
+}
+
 function obtenerEtapaActiva() {
     return etapasEstado.find(etapa => etapa.tiempo_inicio && !etapa.tiempo_fin && !etapa.completada);
+}
+
+function segundosDesdeInicio(tiempoInicio) {
+    const inicio = parseFechaApi(tiempoInicio);
+    if (inicio === null) return 0;
+    return Math.max(0, Math.floor((Date.now() - inicio) / 1000));
+}
+
+function restaurarCronometroActivo() {
+    Object.values(intervalosCronometro).forEach(intervalo => clearInterval(intervalo));
+    intervalosCronometro = {};
+
+    const etapaActiva = obtenerEtapaActiva();
+    if (!etapaActiva) {
+        cronometroDisplay.textContent = '00:00:00';
+        etapaActualDisplay.textContent = rutaActual?.id ? 'Esperando siguiente etapa...' : 'Esperando ruta...';
+        return;
+    }
+
+    etapaActualDisplay.textContent = `▶️ ${etapaActiva.nombre}`;
+    iniciarCronometro(etapaActiva.id);
 }
 
 function marcarSolicitud(etapaId, accion, activa) {
@@ -208,9 +308,9 @@ function actualizarControlesEtapas() {
         const btnReiniciar = card.querySelector('.btn-reiniciar');
         const haySolicitud = ['iniciar', 'parar', 'reiniciar'].some(accion => solicitudEnCurso(etapa.id, accion));
 
-        btnIniciar.disabled = haySolicitud || !puedeIniciarEtapa(etapa);
-        btnParar.disabled = haySolicitud || !puedePararEtapa(etapa);
-        btnReiniciar.disabled = haySolicitud || !puedeReiniciarEtapa(etapa);
+        if (btnIniciar) btnIniciar.disabled = haySolicitud || !puedeIniciarEtapa(etapa);
+        if (btnParar) btnParar.disabled = haySolicitud || !puedePararEtapa(etapa);
+        if (btnReiniciar) btnReiniciar.disabled = haySolicitud || !puedeReiniciarEtapa(etapa);
     });
 }
 
@@ -318,6 +418,10 @@ async function pararEtapa(etapaId) {
             completada: true
         });
         
+        if (etapa.nombre === 'Botón de Pánico') {
+            await iniciarTiempoEnFilaAutomatico();
+        }
+
         actualizarResumen();
     } catch (error) {
         console.error('Error:', error);
@@ -379,11 +483,14 @@ async function reiniciarEtapa(etapaId) {
 }
 
 function iniciarCronometro(etapaId) {
-    let segundos = 0;
+    if (intervalosCronometro[etapaId]) {
+        clearInterval(intervalosCronometro[etapaId]);
+    }
+
+    const pintarTiempo = () => {
+        const etapa = obtenerEstadoEtapa(etapaId);
+        const segundos = segundosDesdeInicio(etapa?.tiempo_inicio);
     
-    intervalosCronometro[etapaId] = setInterval(() => {
-        segundos++;
-        
         const horas = Math.floor(segundos / 3600);
         const minutos = Math.floor((segundos % 3600) / 60);
         const segs = segundos % 60;
@@ -391,14 +498,71 @@ function iniciarCronometro(etapaId) {
         const tiempoFormato = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segs).padStart(2, '0')}`;
         
         // Actualizar tiempo de la etapa
-        document.getElementById(`tiempo-${etapaId}`).textContent = tiempoFormato;
+        const tiempoEtapa = document.getElementById(`tiempo-${etapaId}`);
+        if (tiempoEtapa) {
+            tiempoEtapa.textContent = tiempoFormato;
+        }
         
         // Actualizar cronómetro principal
         cronometroDisplay.textContent = tiempoFormato;
         
         // Actualizar resumen
         actualizarResumen();
-    }, 1000);
+    };
+
+    pintarTiempo();
+    intervalosCronometro[etapaId] = setInterval(pintarTiempo, 1000);
+}
+
+function actualizarTiempoEnFila() {
+    const etapa = obtenerEtapaPorNombre('Tiempo en Fila');
+    if (!etapa) {
+        return;
+    }
+
+    const tiempoElement = document.getElementById(`tiempo-${etapa.id}`);
+    if (!tiempoElement) {
+        return;
+    }
+
+    const etapaPanico = obtenerEtapaPorNombre('Botón de Pánico');
+    if (etapa.completada && etapa.duracion_formateada) {
+        tiempoElement.textContent = etapa.duracion_formateada;
+        return;
+    }
+
+    if (!etapaPanico || !etapaPanico.tiempo_fin) {
+        tiempoElement.textContent = etapa.duracion_formateada || '00:00:00';
+        return;
+    }
+
+    const inicio = parseFechaApi(etapaPanico.tiempo_fin);
+    if (inicio === null) {
+        tiempoElement.textContent = etapa.duracion_formateada || '00:00:00';
+        return;
+    }
+
+    const diferencia = Math.max(0, Math.floor((Date.now() - inicio) / 1000));
+    tiempoElement.textContent = formatearSegundos(diferencia);
+    etapa.duracion_formateada = tiempoElement.textContent;
+}
+
+async function iniciarTiempoEnFilaAutomatico() {
+    const etapa = obtenerEtapaPorNombre('Tiempo en Fila');
+    if (!etapa || etapa.tiempo_inicio || etapa.tiempo_fin || etapa.completada) {
+        return;
+    }
+
+    const etapaPanico = obtenerEtapaPorNombre('Botón de Pánico');
+    if (!etapaPanico || !etapaPanico.tiempo_fin) {
+        return;
+    }
+
+    try {
+        await iniciarEtapa(etapa.id);
+    } catch (error) {
+        console.error('Error al iniciar Tiempo en Fila automaticamente:', error);
+    }
 }
 
 function detenerOtrosEtapas(etapaActualId) {
@@ -448,7 +612,7 @@ async function guardarRuta() {
         return;
     }
 
-    if (etapasEstado.some(etapa => !etapa.completada)) {
+    if (etapasEstado.some(etapa => etapa.nombre !== 'Tiempo en Fila' && !etapa.completada)) {
         mostrarAlerta('Validacion', 'Debes completar todas las etapas antes de guardar la ruta.');
         return;
     }
@@ -468,6 +632,7 @@ async function guardarRuta() {
         }
 
         mostrarAlerta('Éxito', 'Ruta guardada correctamente');
+        limpiarRutaActivaPersistida();
         setTimeout(resetearFormulario, 2000);
     } catch (error) {
         console.error('Error:', error);
@@ -482,6 +647,7 @@ function cancelarRuta() {
 }
 
 function resetearFormulario() {
+    limpiarRutaActivaPersistida();
     rutaActual = null;
     etapasEstado = [];
     solicitudesEnCurso.clear();
@@ -511,3 +677,4 @@ function cerrarModal() {
 }
 
 modalBtn.addEventListener('click', cerrarModal);
+restaurarRutaActiva();

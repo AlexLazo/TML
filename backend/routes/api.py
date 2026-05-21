@@ -2,8 +2,44 @@ from flask import Blueprint, jsonify, request, session
 from models import db, Usuario, Ruta, Etapa, ConfiguracionEtapa
 from datetime import datetime, timedelta
 import json
+import re
 
 api_bp = Blueprint('api', __name__)
+
+
+def _fmt_segundos(segundos):
+    segundos = int(segundos or 0)
+    return f"{segundos // 3600:02d}:{(segundos % 3600) // 60:02d}:{segundos % 60:02d}"
+
+
+def _duracion_etapa(ruta, nombre):
+    etapa = next((etapa for etapa in ruta.etapas if etapa.nombre == nombre), None)
+    return etapa.duracion_segundos if etapa and etapa.duracion_segundos is not None else None
+
+
+def _configuraciones_etapas_activas():
+    etapas = ConfiguracionEtapa.query.filter_by(activa=True).order_by(ConfiguracionEtapa.orden).all()
+    etapas = [etapa for etapa in etapas if etapa.nombre != 'Impresión de Previsita']
+    if not any(etapa.nombre == 'Tiempo en Fila' for etapa in etapas):
+        etapas.append(ConfiguracionEtapa(nombre='Tiempo en Fila', orden=5, descripcion='Tiempo en fila antes de salida'))
+    return etapas
+
+
+def _serializar_etapas(ruta):
+    etapas = [etapa for etapa in sorted(ruta.etapas, key=lambda x: x.orden) if etapa.nombre != 'Impresión de Previsita']
+    return [
+        {
+            'id': etapa.id,
+            'nombre': etapa.nombre,
+            'orden': etapa.orden,
+            'tiempo_inicio': etapa.tiempo_inicio.isoformat() if etapa.tiempo_inicio else None,
+            'tiempo_fin': etapa.tiempo_fin.isoformat() if etapa.tiempo_fin else None,
+            'duracion_segundos': etapa.duracion_segundos,
+            'duracion_formateada': etapa.get_duracion_formateada(),
+            'completada': etapa.completada
+        }
+        for etapa in etapas
+    ]
 
 
 # ==================== ENDPOINTS DE RUTAS ====================
@@ -11,7 +47,7 @@ api_bp = Blueprint('api', __name__)
 @api_bp.route('/rutas', methods=['GET'])
 def obtener_rutas():
     """Obtiene todas las rutas"""
-    if not session.get('admin_id'):
+    if session.get('rol') not in ('admin', 'supervisor'):
         return jsonify({'error': 'No autorizado'}), 401
 
     usuario_id = request.args.get('usuario_id', type=int)
@@ -44,11 +80,15 @@ def obtener_rutas():
 @api_bp.route('/rutas', methods=['POST'])
 def crear_ruta():
     """Crea una nueva ruta"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    numero_ruta = (data.get('numero_ruta') or '').strip().upper()
+
+    if not re.fullmatch(r'DS00([0-9]{1,2}|[A-Z]{1,2})', numero_ruta):
+        return jsonify({'error': 'La ruta debe usar DS00 seguido de maximo 2 numeros o 2 letras'}), 400
     
     nueva_ruta = Ruta(
         usuario_id=data.get('usuario_id'),
-        numero_ruta=data.get('numero_ruta'),
+        numero_ruta=numero_ruta,
         notas=data.get('notas', '')
     )
     
@@ -56,12 +96,12 @@ def crear_ruta():
     db.session.flush()
     
     # Crear etapas por defecto
-    etapas_config = ConfiguracionEtapa.query.filter_by(activa=True).all()
-    for config in etapas_config:
+    etapas_config = _configuraciones_etapas_activas()
+    for orden, config in enumerate(etapas_config, 1):
         etapa = Etapa(
             ruta_id=nueva_ruta.id,
             nombre=config.nombre,
-            orden=config.orden
+            orden=orden
         )
         db.session.add(etapa)
     
@@ -79,18 +119,7 @@ def obtener_ruta(ruta_id):
     """Obtiene una ruta específica con sus etapas"""
     ruta = Ruta.query.get_or_404(ruta_id)
     
-    etapas = []
-    for etapa in sorted(ruta.etapas, key=lambda x: x.orden):
-        etapas.append({
-            'id': etapa.id,
-            'nombre': etapa.nombre,
-            'orden': etapa.orden,
-            'tiempo_inicio': etapa.tiempo_inicio.isoformat() if etapa.tiempo_inicio else None,
-            'tiempo_fin': etapa.tiempo_fin.isoformat() if etapa.tiempo_fin else None,
-            'duracion_segundos': etapa.duracion_segundos,
-            'duracion_formateada': etapa.get_duracion_formateada(),
-            'completada': etapa.completada
-        })
+    etapas = _serializar_etapas(ruta)
     
     return jsonify({
         'id': ruta.id,
@@ -114,9 +143,20 @@ def actualizar_ruta(ruta_id):
             activa = _etapa_activa(ruta)
             if activa:
                 return jsonify({'error': f'Primero debes parar la etapa activa: {activa.nombre}'}), 400
-            pendientes = [etapa.nombre for etapa in ruta.etapas if not etapa.completada]
+            pendientes = [etapa.nombre for etapa in ruta.etapas if not etapa.completada and etapa.nombre != 'Tiempo en Fila']
             if pendientes:
                 return jsonify({'error': 'No puedes guardar la ruta sin completar todas las etapas'}), 400
+
+            # Calcular Tiempo en Fila como el tiempo después de Botón de Pánico hasta el cierre de la ruta.
+            etapa_tiempo_fila = _etapa_por_nombre(ruta, 'Tiempo en Fila')
+            etapa_panico = _etapa_por_nombre(ruta, 'Botón de Pánico')
+            if etapa_tiempo_fila and not etapa_tiempo_fila.completada and etapa_panico and etapa_panico.tiempo_fin:
+                etapa_tiempo_fila.tiempo_inicio = etapa_panico.tiempo_fin
+                etapa_tiempo_fila.tiempo_fin = datetime.utcnow()
+                duracion = etapa_tiempo_fila.tiempo_fin - etapa_tiempo_fila.tiempo_inicio
+                etapa_tiempo_fila.duracion_segundos = int(duracion.total_seconds())
+                etapa_tiempo_fila.completada = True
+
         ruta.estado = data['estado']
     if 'notas' in data:
         ruta.notas = data['notas']
@@ -129,7 +169,7 @@ def actualizar_ruta(ruta_id):
 @api_bp.route('/rutas/<int:ruta_id>', methods=['DELETE'])
 def eliminar_ruta(ruta_id):
     """Elimina una ruta"""
-    if not session.get('admin_id'):
+    if session.get('rol') != 'admin':
         return jsonify({'error': 'No autorizado'}), 401
 
     ruta = Ruta.query.get_or_404(ruta_id)
@@ -143,6 +183,10 @@ def eliminar_ruta(ruta_id):
 
 def _etapas_de_ruta(etapa):
     return sorted(etapa.ruta.etapas, key=lambda x: x.orden)
+
+
+def _etapa_por_nombre(ruta, nombre):
+    return next((etapa for etapa in ruta.etapas if etapa.nombre == nombre), None)
 
 
 def _etapa_activa(ruta, excluir_id=None):
@@ -288,24 +332,28 @@ def obtener_estadisticas():
 @api_bp.route('/etapas-promedio', methods=['GET'])
 def obtener_etapas_promedio():
     """Obtiene promedios de tiempo por etapa"""
-    if not session.get('admin_id'):
+    if session.get('rol') not in ('admin', 'supervisor'):
         return jsonify({'error': 'No autorizado'}), 401
 
     usuario_id = request.args.get('usuario_id', type=int)
     
-    query = Etapa.query.filter(Etapa.duracion_segundos.isnot(None))
-    
+    etapa_query = Etapa.query.filter(Etapa.duracion_segundos.isnot(None))
     if usuario_id:
-        query = query.join(Ruta).filter(Ruta.usuario_id == usuario_id)
+        etapa_query = etapa_query.join(Ruta).filter(Ruta.usuario_id == usuario_id)
     
-    etapas = query.all()
+    rutas_query = Ruta.query
+    if usuario_id:
+        rutas_query = rutas_query.filter(Ruta.usuario_id == usuario_id)
+    
+    etapas = etapa_query.all()
+    rutas = rutas_query.all()
     
     stats = {}
     for etapa in etapas:
         nombre = etapa.nombre
-        if nombre not in stats:
-            stats[nombre] = []
-        stats[nombre].append(etapa.duracion_segundos)
+        if nombre == 'Impresión de Previsita':
+            continue
+        stats.setdefault(nombre, []).append(etapa.duracion_segundos)
     
     resultado = {}
     for nombre, tiempos in stats.items():
@@ -325,7 +373,7 @@ def obtener_etapas_promedio():
 @api_bp.route('/historial-diario', methods=['GET'])
 def obtener_historial_diario():
     """Obtiene el historial de rutas por día"""
-    if not session.get('admin_id'):
+    if session.get('rol') not in ('admin', 'supervisor'):
         return jsonify({'error': 'No autorizado'}), 401
 
     usuario_id = request.args.get('usuario_id', type=int)

@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request, send_file, session
 from models import db, Ruta, Etapa, Usuario, RutaFija
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 import io
 import os
@@ -11,8 +12,16 @@ admin_bp = Blueprint('admin', __name__)
 
 @admin_bp.before_request
 def requerir_admin():
-    if not session.get('admin_id'):
+    if not session.get('usuario_id'):
         return jsonify({'error': 'No autorizado'}), 401
+    if session.get('rol') not in ('admin', 'supervisor'):
+        return jsonify({'error': 'No autorizado'}), 403
+
+
+def _requiere_admin():
+    if session.get('rol') != 'admin':
+        return jsonify({'error': 'Solo administradores pueden ejecutar esta accion'}), 403
+    return None
 
 
 def _fmt_segundos(segundos):
@@ -30,6 +39,8 @@ def _ruta_payload(ruta):
     tiempo_total = 0
 
     for etapa in sorted(ruta.etapas, key=lambda x: x.orden):
+        if etapa.nombre == 'Impresión de Previsita':
+            continue
         tiempo = etapa.duracion_segundos or 0
         tiempo_total += tiempo
         etapas_info.append({
@@ -54,6 +65,41 @@ def _ruta_payload(ruta):
         'canal': ruta_fija.canal if ruta_fija else '-',
         'estatus_fijo': ruta_fija.estatus if ruta_fija else '-'
     }
+
+
+def _duracion_etapa(ruta, nombre):
+    etapa = next((etapa for etapa in ruta.etapas if etapa.nombre == nombre), None)
+    return etapa.duracion_segundos if etapa and etapa.duracion_segundos is not None else None
+
+
+def _aplicar_filtros_rutas(query):
+    estado = request.args.get('estado')
+    fecha_inicio = request.args.get('fecha_inicio')
+    fecha_final = request.args.get('fecha_final')
+    supervisor = request.args.get('supervisor')
+    contratista = request.args.get('contratista')
+
+    if estado:
+        query = query.filter(Ruta.estado == estado)
+
+    if fecha_inicio:
+        fecha = datetime.strptime(fecha_inicio, '%Y-%m-%d')
+        query = query.filter(Ruta.fecha >= fecha)
+
+    if fecha_final:
+        fecha = datetime.strptime(fecha_final, '%Y-%m-%d')
+        fecha_siguiente = fecha + timedelta(days=1)
+        query = query.filter(Ruta.fecha < fecha_siguiente)
+
+    if supervisor:
+        rutas_supervisor = db.session.query(RutaFija.numero_ruta).filter(RutaFija.supervisor == supervisor)
+        query = query.filter(Ruta.numero_ruta.in_(rutas_supervisor))
+
+    if contratista:
+        rutas_contratista = db.session.query(RutaFija.numero_ruta).filter(RutaFija.contratista == contratista)
+        query = query.filter(Ruta.numero_ruta.in_(rutas_contratista))
+
+    return query
 
 
 @admin_bp.route('/rutas-con-etapas', methods=['GET'])
@@ -131,7 +177,7 @@ def descargar_excel():
     )
     
     # Encabezados
-    headers = ['ID', 'Ruta', 'Supervisor', 'Contratista', 'Canal', 'Usuario', 'Fecha', 'Estado', 'Matinal', 'Impresión', 'Conteo', 'Check Salida', 'Pánico', 'Tiempo Total', 'Notas']
+    headers = ['ID', 'Ruta', 'Supervisor', 'Contratista', 'Canal', 'Usuario', 'Fecha', 'Estado', 'Matinal', 'Tiempo en Fila', 'Conteo', 'Check Salida', 'Pánico', 'Tiempo Total', 'Notas']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.fill = header_fill
@@ -162,10 +208,10 @@ def descargar_excel():
             ruta.fecha.strftime('%Y-%m-%d %H:%M:%S'),
             ruta.estado,
             etapas_duracion.get('Matinal', '-'),
-            etapas_duracion.get('Impresión de Previsita', '-'),
             etapas_duracion.get('Conteo de Carga', '-'),
             etapas_duracion.get('Check de Salida', '-'),
             etapas_duracion.get('Botón de Pánico', '-'),
+            etapas_duracion.get('Tiempo en Fila', '-'),
             tiempo_total_fmt,
             ruta.notas or ''
         ]
@@ -210,6 +256,10 @@ def descargar_excel():
 @admin_bp.route('/rutas/<int:ruta_id>', methods=['DELETE'])
 def eliminar_ruta_admin(ruta_id):
     """Elimina una ruta medida con sus etapas"""
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
     ruta = Ruta.query.get_or_404(ruta_id)
     db.session.delete(ruta)
     db.session.commit()
@@ -219,6 +269,10 @@ def eliminar_ruta_admin(ruta_id):
 @admin_bp.route('/limpiar-datos', methods=['POST'])
 def limpiar_datos():
     """Elimina datos transaccionales de prueba sin borrar usuarios ni rutas fijas"""
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
     data = request.get_json(silent=True) or {}
     confirmacion = data.get('confirmacion', '')
     if confirmacion != 'BORRAR':
@@ -232,9 +286,13 @@ def limpiar_datos():
     return jsonify({'mensaje': 'Datos de rutas eliminados', 'rutas_eliminadas': total})
 
 
-@admin_bp.route('/importar-rutas-fijas', methods=['POST'])
+@admin_bp.route('/importar-rutas-fijas', methods=['GET', 'POST'])
 def importar_rutas_fijas():
     """Importa la base de supervisores/contratistas desde Rutas fijas Mayo.xlsx"""
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     archivo = os.path.join(base_dir, 'Rutas fijas Mayo.xlsx')
     if not os.path.exists(archivo):
@@ -307,38 +365,149 @@ def opciones_filtros():
     return jsonify({'supervisores': supervisores, 'contratistas': contratistas})
 
 
+@admin_bp.route('/usuarios', methods=['GET'])
+def listar_usuarios():
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
+    usuarios = Usuario.query.order_by(Usuario.nombre).all()
+    return jsonify([{
+        'id': usuario.id,
+        'nombre': usuario.nombre,
+        'email': usuario.email,
+        'rol': usuario.rol or ('admin' if usuario.es_admin else 'operador'),
+        'activo': usuario.activo,
+        'fecha_creacion': usuario.fecha_creacion.isoformat() if usuario.fecha_creacion else None
+    } for usuario in usuarios])
+
+
+@admin_bp.route('/usuarios', methods=['POST'])
+def crear_usuario():
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
+    data = request.get_json(silent=True) or {}
+    nombre = (data.get('nombre') or '').strip()
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+    rol = data.get('rol') or 'operador'
+
+    if rol not in ('admin', 'supervisor', 'operador'):
+        return jsonify({'error': 'Rol invalido'}), 400
+    if not nombre or not email or not password:
+        return jsonify({'error': 'Nombre, email y contrasena son obligatorios'}), 400
+    if Usuario.query.filter_by(email=email).first():
+        return jsonify({'error': 'Ya existe un usuario con ese email'}), 400
+
+    usuario = Usuario(
+        nombre=nombre,
+        email=email,
+        password=generate_password_hash(password),
+        rol=rol,
+        es_admin=rol == 'admin',
+        activo=bool(data.get('activo', True))
+    )
+    db.session.add(usuario)
+    db.session.commit()
+    return jsonify({'mensaje': 'Usuario creado', 'id': usuario.id}), 201
+
+
+@admin_bp.route('/usuarios/<int:usuario_id>', methods=['PUT'])
+def actualizar_usuario(usuario_id):
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
+    usuario = Usuario.query.get_or_404(usuario_id)
+    data = request.get_json(silent=True) or {}
+
+    if 'nombre' in data:
+        usuario.nombre = (data.get('nombre') or '').strip()
+    if 'email' in data:
+        email = (data.get('email') or '').strip().lower()
+        existente = Usuario.query.filter(Usuario.email == email, Usuario.id != usuario.id).first()
+        if existente:
+            return jsonify({'error': 'Ya existe un usuario con ese email'}), 400
+        usuario.email = email
+    if 'rol' in data:
+        rol = data.get('rol')
+        if rol not in ('admin', 'supervisor', 'operador'):
+            return jsonify({'error': 'Rol invalido'}), 400
+        usuario.rol = rol
+        usuario.es_admin = rol == 'admin'
+    if 'activo' in data:
+        usuario.activo = bool(data.get('activo'))
+    if data.get('password'):
+        usuario.password = generate_password_hash(data['password'])
+
+    db.session.commit()
+    return jsonify({'mensaje': 'Usuario actualizado'})
+
+
+@admin_bp.route('/usuarios/<int:usuario_id>', methods=['DELETE'])
+def eliminar_usuario(usuario_id):
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
+    if usuario_id == session.get('usuario_id'):
+        return jsonify({'error': 'No puedes eliminar tu propio usuario'}), 400
+
+    usuario = Usuario.query.get_or_404(usuario_id)
+    if usuario.rutas:
+        return jsonify({'error': 'Este usuario tiene rutas asociadas. Desactivalo para conservar el historial.'}), 400
+
+    db.session.delete(usuario)
+    db.session.commit()
+    return jsonify({'mensaje': 'Usuario eliminado'})
+
+
 @admin_bp.route('/estadisticas-general', methods=['GET'])
 def estadisticas_general():
     """Estadísticas generales del sistema"""
     dias = request.args.get('dias', default=30, type=int)
-    
-    fecha_inicio = datetime.utcnow() - timedelta(days=dias)
-    
-    # Rutas
-    rutas_periodo = Ruta.query.filter(Ruta.fecha >= fecha_inicio).all()
+    fecha_inicio_str = request.args.get('fecha_inicio')
+    fecha_final_str = request.args.get('fecha_final')
+
+    fecha_inicio = None
+    if fecha_inicio_str:
+        fecha_inicio = datetime.strptime(fecha_inicio_str, '%Y-%m-%d')
+    elif dias:
+        fecha_inicio = datetime.utcnow() - timedelta(days=dias)
+
+    query = Ruta.query
+    query = _aplicar_filtros_rutas(query)
+
+    if fecha_inicio:
+        query = query.filter(Ruta.fecha >= fecha_inicio)
+    if fecha_final_str:
+        fecha_final = datetime.strptime(fecha_final_str, '%Y-%m-%d') + timedelta(days=1)
+        query = query.filter(Ruta.fecha < fecha_final)
+
+    rutas_periodo = query.all()
     rutas_totales = len(rutas_periodo)
     rutas_completadas = sum(1 for ruta in rutas_periodo if ruta.estado == 'completada')
     rutas_activas = sum(1 for ruta in rutas_periodo if ruta.estado == 'activa')
     rutas_canceladas = sum(1 for ruta in rutas_periodo if ruta.estado == 'cancelada')
-    
-    # Usuarios
+
     usuarios_totales = Usuario.query.filter(Usuario.activo == True).count()
-    
-    # Tiempo promedio por etapa
-    etapas = Etapa.query.join(Ruta).filter(
-        Ruta.fecha >= fecha_inicio,
-        Etapa.duracion_segundos.isnot(None)
-    ).all()
-    
+
     etapas_stats = {}
-    for etapa in etapas:
-        nombre = etapa.nombre
-        if nombre not in etapas_stats:
-            etapas_stats[nombre] = []
-        etapas_stats[nombre].append(etapa.duracion_segundos)
-    
+    for ruta in rutas_periodo:
+        for etapa in ruta.etapas:
+            if etapa.duracion_segundos is None:
+                continue
+            nombre = etapa.nombre
+            if nombre not in etapas_stats:
+                etapas_stats[nombre] = []
+            etapas_stats[nombre].append(etapa.duracion_segundos)
+
     etapas_promedio = {}
     for nombre, tiempos in etapas_stats.items():
+        if nombre == 'Impresión de Previsita':
+            continue
         promedio = sum(tiempos) / len(tiempos)
         etapas_promedio[nombre] = {
             'promedio': int(promedio),
@@ -355,17 +524,27 @@ def estadisticas_general():
             if total:
                 tiempos_totales.append((ruta, total))
 
+    tiempos_fila = []
+    for ruta in rutas_periodo:
+        fila = _duracion_etapa(ruta, 'Tiempo en Fila')
+        if fila is not None:
+            tiempos_fila.append(fila)
+
     promedio_total = int(sum(total for _, total in tiempos_totales) / len(tiempos_totales)) if tiempos_totales else 0
     ruta_mas_rapida = min(tiempos_totales, key=lambda item: item[1], default=None)
     ruta_mas_lenta = max(tiempos_totales, key=lambda item: item[1], default=None)
     cuello_botella = max(etapas_promedio.items(), key=lambda item: item[1]['promedio'], default=None)
+
+    promedio_fila = int(sum(tiempos_fila) / len(tiempos_fila)) if tiempos_fila else 0
+    tiempo_fila_maximo = max(tiempos_fila) if tiempos_fila else 0
+    rutas_con_tiempo_fila = len(tiempos_fila)
 
     estados = {
         'activa': rutas_activas,
         'completada': rutas_completadas,
         'cancelada': rutas_canceladas
     }
-    
+
     return jsonify({
         'rutas_totales': rutas_totales,
         'rutas_completadas': rutas_completadas,
@@ -392,6 +571,11 @@ def estadisticas_general():
         } if cuello_botella else None,
         'estados': estados,
         'etapas_promedio': etapas_promedio,
+        'tiempo_en_fila_promedio': promedio_fila,
+        'tiempo_en_fila_promedio_fmt': f"{promedio_fila // 3600:02d}:{(promedio_fila % 3600) // 60:02d}:{promedio_fila % 60:02d}",
+        'tiempo_en_fila_maximo': tiempo_fila_maximo,
+        'rutas_con_tiempo_en_fila': rutas_con_tiempo_fila,
+        'rutas_sin_tiempo_en_fila': rutas_totales - rutas_con_tiempo_fila,
         'periodo_dias': dias
     })
 
@@ -400,9 +584,25 @@ def estadisticas_general():
 def analisis_avanzado():
     """Analisis operativo para fortalecer el dashboard"""
     dias = request.args.get('dias', default=30, type=int)
-    fecha_inicio = datetime.utcnow() - timedelta(days=dias)
+    fecha_inicio_str = request.args.get('fecha_inicio')
+    fecha_final_str = request.args.get('fecha_final')
 
-    rutas = Ruta.query.filter(Ruta.fecha >= fecha_inicio).order_by(Ruta.fecha.desc()).all()
+    fecha_inicio = None
+    if fecha_inicio_str:
+        fecha_inicio = datetime.strptime(fecha_inicio_str, '%Y-%m-%d')
+    elif dias:
+        fecha_inicio = datetime.utcnow() - timedelta(days=dias)
+
+    query = Ruta.query
+    query = _aplicar_filtros_rutas(query)
+
+    if fecha_inicio:
+        query = query.filter(Ruta.fecha >= fecha_inicio)
+    if fecha_final_str:
+        fecha_final = datetime.strptime(fecha_final_str, '%Y-%m-%d') + timedelta(days=1)
+        query = query.filter(Ruta.fecha < fecha_final)
+
+    rutas = query.order_by(Ruta.fecha.desc()).all()
     por_hora = {str(hora).zfill(2): 0 for hora in range(24)}
     ranking_etapas = {}
     supervisores = {}
@@ -413,26 +613,38 @@ def analisis_avanzado():
         por_hora[str(ruta.fecha.hour).zfill(2)] += 1
         total = sum(etapa.duracion_segundos or 0 for etapa in ruta.etapas)
         pendientes = sum(1 for etapa in ruta.etapas if not etapa.completada)
+        tiempo_fila = _duracion_etapa(ruta, 'Tiempo en Fila')
         ruta_fija = _ruta_fija(ruta.numero_ruta)
         supervisor = ruta_fija.supervisor if ruta_fija and ruta_fija.supervisor else 'Sin supervisor'
         contratista = ruta_fija.contratista if ruta_fija and ruta_fija.contratista else 'Sin contratista'
 
         for bucket, nombre in ((supervisores, supervisor), (contratistas, contratista)):
             if nombre not in bucket:
-                bucket[nombre] = {'rutas': 0, 'completadas': 0, 'tiempo_total': 0, 'con_tiempo': 0}
+                bucket[nombre] = {
+                    'rutas': 0,
+                    'completadas': 0,
+                    'tiempo_total': 0,
+                    'con_tiempo': 0,
+                    'cola_total': 0,
+                    'cola_count': 0
+                }
             bucket[nombre]['rutas'] += 1
             if ruta.estado == 'completada':
                 bucket[nombre]['completadas'] += 1
             if total:
                 bucket[nombre]['tiempo_total'] += total
                 bucket[nombre]['con_tiempo'] += 1
+            if tiempo_fila is not None:
+                bucket[nombre]['cola_total'] += tiempo_fila
+                bucket[nombre]['cola_count'] += 1
 
         if ruta.estado != 'completada' or pendientes:
             rutas_problematicas.append({
                 'numero_ruta': ruta.numero_ruta,
                 'estado': ruta.estado,
                 'pendientes': pendientes,
-                'fecha': ruta.fecha.isoformat()
+                'fecha': ruta.fecha.isoformat(),
+                'tiempo_en_fila': _fmt_segundos(tiempo_fila) if tiempo_fila is not None else 'Pendiente'
             })
 
         for etapa in ruta.etapas:
@@ -462,13 +674,17 @@ def analisis_avanzado():
         resumen = []
         for nombre, data in bucket.items():
             promedio = int(data['tiempo_total'] / data['con_tiempo']) if data['con_tiempo'] else 0
+            promedio_cola = int(data['cola_total'] / data['cola_count']) if data['cola_count'] else 0
             resumen.append({
                 'nombre': nombre,
                 'rutas': data['rutas'],
                 'completadas': data['completadas'],
                 'tasa': round((data['completadas'] / data['rutas'] * 100) if data['rutas'] else 0, 1),
                 'promedio': promedio,
-                'promedio_fmt': _fmt_segundos(promedio)
+                'promedio_fmt': _fmt_segundos(promedio),
+                'promedio_cola': promedio_cola,
+                'promedio_cola_fmt': _fmt_segundos(promedio_cola),
+                'cola_disponibles': data['cola_count']
             })
         resumen.sort(key=lambda item: (item['rutas'], item['completadas']), reverse=True)
         return resumen

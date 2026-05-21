@@ -170,15 +170,92 @@ body {
     box-shadow: var(--box-shadow);
 }
 
+.chart-box-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
 .chart-box h3 {
     font-size: 16px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
     color: var(--dark);
     font-weight: 600;
 }
 
+.chart-expand-btn {
+    border: 1px solid #d7dee8;
+    background: #f8fafc;
+    color: var(--dark);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 12px;
+    white-space: nowrap;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chart-expand-btn:hover {
+    background: #edf3fb;
+    border-color: var(--primary-color);
+}
+
 .chart-box canvas {
     max-height: 300px;
+}
+
+.chart-modal {
+    z-index: 1100;
+}
+
+.chart-modal-content {
+    width: min(1200px, calc(100% - 32px));
+    max-width: none;
+    height: min(760px, calc(100vh - 48px));
+    margin: 24px auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.chart-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.chart-modal-header h2 {
+    margin-bottom: 0;
+}
+
+.chart-modal-close {
+    border: 0;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    font-size: 32px;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.chart-modal-close:hover {
+    color: var(--dark);
+}
+
+.chart-modal-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
+.chart-modal-body canvas {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none;
 }
 
 /* ==================== INSIGHTS ==================== */
@@ -317,6 +394,27 @@ body {
 .danger-zone p {
     color: #667;
     margin-bottom: 16px;
+}
+
+.user-form {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: 20px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.check-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--dark);
+    padding: 10px 12px;
 }
 
 /* ==================== LOGIN ==================== */

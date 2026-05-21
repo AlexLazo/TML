@@ -7,7 +7,10 @@ let chartComparativa = null;
 let chartEstados = null;
 let chartHoras = null;
 let chartSupervisores = null;
+let chartColaSupervisores = null;
 let chartContratistas = null;
+let chartTiempoCola = null;
+const rolActual = document.body.dataset.role || 'operador';
 
 // ==================== ELEMENTOS DEL DOM ====================
 const navItems = document.querySelectorAll('.nav-item[data-section]');
@@ -19,6 +22,7 @@ const statRutasCompletadas = document.getElementById('statRutasCompletadas');
 const statTasaCompletacion = document.getElementById('statTasaCompletacion');
 const statUsuariosActivos = document.getElementById('statUsuariosActivos');
 const statTiempoPromedio = document.getElementById('statTiempoPromedio');
+const statTiempoColaPromedio = document.getElementById('statTiempoColaPromedio');
 const statCuelloBotella = document.getElementById('statCuelloBotella');
 const listaInsights = document.getElementById('listaInsights');
 const listaRutasAtencion = document.getElementById('listaRutasAtencion');
@@ -39,6 +43,20 @@ const btnImportarRutasFijas = document.getElementById('btnImportarRutasFijas');
 const estadoImportacion = document.getElementById('estadoImportacion');
 const bodyTablaRutasFijas = document.getElementById('bodyTablaRutasFijas');
 const btnLimpiarDatos = document.getElementById('btnLimpiarDatos');
+const usuarioId = document.getElementById('usuarioId');
+const usuarioNombre = document.getElementById('usuarioNombre');
+const usuarioEmail = document.getElementById('usuarioEmail');
+const usuarioPassword = document.getElementById('usuarioPassword');
+const usuarioRol = document.getElementById('usuarioRol');
+const usuarioActivo = document.getElementById('usuarioActivo');
+const btnGuardarUsuario = document.getElementById('btnGuardarUsuario');
+const btnCancelarUsuario = document.getElementById('btnCancelarUsuario');
+const bodyTablaUsuarios = document.getElementById('bodyTablaUsuarios');
+const dashboardFiltroPeriodo = document.getElementById('dashboardFiltroPeriodo');
+const dashboardFiltroEstado = document.getElementById('dashboardFiltroEstado');
+const dashboardFiltroSupervisor = document.getElementById('dashboardFiltroSupervisor');
+const dashboardFiltroContratista = document.getElementById('dashboardFiltroContratista');
+const btnDashboardRefrescar = document.getElementById('btnDashboardRefrescar');
 
 // Reportes
 const bodyTablaReportes = document.getElementById('bodyTablaReportes');
@@ -47,6 +65,11 @@ const bodyTablaReportes = document.getElementById('bodyTablaReportes');
 const modalDetallesRuta = document.getElementById('modalDetallesRuta');
 const detallesRutaContenido = document.getElementById('detallesRutaContenido');
 const closeBtn = document.querySelector('.close');
+const modalGraficoAmpliado = document.getElementById('modalGraficoAmpliado');
+const tituloGraficoAmpliado = document.getElementById('tituloGraficoAmpliado');
+const contenedorGraficoAmpliado = document.getElementById('contenedorGraficoAmpliado');
+const btnCerrarGraficoAmpliado = document.getElementById('btnCerrarGraficoAmpliado');
+let graficoAmpliado = null;
 
 // ==================== EVENT LISTENERS ====================
 navItems.forEach(item => {
@@ -61,6 +84,13 @@ btnDescargarExcel.addEventListener('click', descargarExcel);
 closeBtn.addEventListener('click', cerrarModalDetalles);
 window.addEventListener('click', (e) => {
     if (e.target === modalDetallesRuta) cerrarModalDetalles();
+    if (e.target === modalGraficoAmpliado) cerrarGraficoAmpliado();
+});
+btnCerrarGraficoAmpliado?.addEventListener('click', cerrarGraficoAmpliado);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modalGraficoAmpliado?.style.display === 'block') {
+        cerrarGraficoAmpliado();
+    }
 });
 
 // Filtros
@@ -69,11 +99,18 @@ filtroRutasEstado.addEventListener('change', cargarRutas);
 filtroRutasFecha.addEventListener('change', cargarRutas);
 filtroRutasSupervisor.addEventListener('change', cargarRutas);
 filtroRutasContratista.addEventListener('change', cargarRutas);
+dashboardFiltroPeriodo?.addEventListener('change', cargarDashboard);
+dashboardFiltroEstado?.addEventListener('change', cargarDashboard);
+dashboardFiltroSupervisor?.addEventListener('change', cargarDashboard);
+dashboardFiltroContratista?.addEventListener('change', cargarDashboard);
+btnDashboardRefrescar?.addEventListener('click', cargarDashboard);
 filtroHistorialEstado.addEventListener('change', cargarHistorialAdmin);
 filtroHistorialSupervisor.addEventListener('change', cargarHistorialAdmin);
 filtroHistorialFecha.addEventListener('change', cargarHistorialAdmin);
-btnImportarRutasFijas.addEventListener('click', importarRutasFijas);
-btnLimpiarDatos.addEventListener('click', limpiarDatosRutas);
+btnImportarRutasFijas?.addEventListener('click', importarRutasFijas);
+btnLimpiarDatos?.addEventListener('click', limpiarDatosRutas);
+btnGuardarUsuario?.addEventListener('click', guardarUsuario);
+btnCancelarUsuario?.addEventListener('click', limpiarFormularioUsuario);
 
 // ==================== FUNCIONES DE NAVEGACIÓN ====================
 
@@ -103,6 +140,8 @@ function mostrarSeccion(seccion) {
         cargarReportes();
     } else if (seccion === 'maestro') {
         cargarRutasFijas();
+    } else if (seccion === 'usuarios') {
+        cargarUsuarios();
     }
 }
 
@@ -115,22 +154,38 @@ async function fetchAdmin(url, options = {}) {
         throw new Error('No autorizado');
     }
     if (!response.ok) {
-        throw new Error('Error al cargar datos');
+        let message = 'Error al cargar datos';
+        try {
+            const data = await response.json();
+            message = data.error || data.mensaje || message;
+        } catch (error) {
+            message = await response.text() || message;
+        }
+        throw new Error(message);
     }
     return response;
 }
 
 async function cargarDashboard() {
     try {
-        const [statsRes, etapasRes, historialRes, avanzadoRes] = await Promise.all([
-            fetchAdmin(`${ADMIN_BASE}/estadisticas-general?dias=30`),
-            fetchAdmin(`${API_BASE}/etapas-promedio`),
-            fetchAdmin(`${API_BASE}/historial-diario?dias=7`),
-            fetchAdmin(`${ADMIN_BASE}/analisis-avanzado?dias=30`)
+        const params = new URLSearchParams();
+        const periodo = dashboardFiltroPeriodo?.value || '30';
+        const estado = dashboardFiltroEstado?.value;
+        const supervisor = dashboardFiltroSupervisor?.value;
+        const contratista = dashboardFiltroContratista?.value;
+
+        params.append('dias', periodo);
+        if (estado) params.append('estado', estado);
+        if (supervisor) params.append('supervisor', supervisor);
+        if (contratista) params.append('contratista', contratista);
+
+        const [statsRes, historialRes, avanzadoRes] = await Promise.all([
+            fetchAdmin(`${ADMIN_BASE}/estadisticas-general?${params}`),
+            fetchAdmin(`${API_BASE}/historial-diario?dias=${periodo}`),
+            fetchAdmin(`${ADMIN_BASE}/analisis-avanzado?${params}`)
         ]);
 
         const stats = await statsRes.json();
-        const etapas = await etapasRes.json();
         const historial = await historialRes.json();
         const avanzado = await avanzadoRes.json();
 
@@ -140,6 +195,7 @@ async function cargarDashboard() {
         statTasaCompletacion.textContent = stats.tasa_completacion;
         statUsuariosActivos.textContent = stats.usuarios_activos;
         statTiempoPromedio.textContent = stats.tiempo_promedio_total_fmt || '00:00:00';
+        statTiempoColaPromedio.textContent = stats.tiempo_en_fila_promedio_fmt || '00:00:00';
         statCuelloBotella.textContent = stats.cuello_botella ? stats.cuello_botella.nombre : '-';
 
         // Gráfico de promedios
@@ -151,7 +207,9 @@ async function cargarDashboard() {
         dibujarGraficoEstados(stats.estados || {});
         dibujarGraficoHoras(avanzado.por_hora || {});
         dibujarGraficoRanking('chartSupervisores', chartSupervisores, avanzado.supervisores || [], 'Supervisor', chart => chartSupervisores = chart);
+        dibujarGraficoTiempoCola(stats);
         dibujarGraficoRanking('chartContratistas', chartContratistas, avanzado.contratistas || [], 'Contratista', chart => chartContratistas = chart);
+        dibujarGraficoColaSupervisores(avanzado.supervisores || []);
         renderizarInsights(stats, avanzado);
         await cargarOpcionesFiltros();
     } catch (error) {
@@ -166,6 +224,8 @@ async function cargarOpcionesFiltros() {
     llenarSelect(filtroRutasSupervisor, opciones.supervisores, 'Todos los supervisores');
     llenarSelect(filtroHistorialSupervisor, opciones.supervisores, 'Todos los supervisores');
     llenarSelect(filtroRutasContratista, opciones.contratistas, 'Todos los contratistas');
+    llenarSelect(dashboardFiltroSupervisor, opciones.supervisores, 'Todos los supervisores');
+    llenarSelect(dashboardFiltroContratista, opciones.contratistas, 'Todos los contratistas');
 }
 
 function llenarSelect(select, valores, placeholder) {
@@ -178,6 +238,76 @@ function llenarSelect(select, valores, placeholder) {
         select.appendChild(option);
     });
     select.value = valorActual;
+}
+
+function inicializarControlesGraficos() {
+    document.querySelectorAll('.chart-box canvas').forEach(canvas => {
+        const chartBox = canvas.closest('.chart-box');
+        const titulo = chartBox?.querySelector('h3');
+        if (!chartBox || !titulo || chartBox.querySelector('.chart-expand-btn')) return;
+
+        const header = document.createElement('div');
+        header.className = 'chart-box-header';
+        titulo.parentNode.insertBefore(header, titulo);
+        header.appendChild(titulo);
+
+        const boton = document.createElement('button');
+        boton.type = 'button';
+        boton.className = 'chart-expand-btn';
+        boton.textContent = 'Ampliar';
+        boton.setAttribute('aria-label', `Ampliar ${titulo.textContent}`);
+        boton.addEventListener('click', () => abrirGraficoAmpliado(canvas, titulo.textContent));
+        header.appendChild(boton);
+    });
+}
+
+function obtenerInstanciaChart(canvas) {
+    if (window.Chart && typeof Chart.getChart === 'function') {
+        return Chart.getChart(canvas);
+    }
+    return null;
+}
+
+function abrirGraficoAmpliado(canvas, titulo) {
+    if (!modalGraficoAmpliado || !contenedorGraficoAmpliado || !canvas) return;
+    if (graficoAmpliado) cerrarGraficoAmpliado();
+
+    const marcador = document.createComment(`posicion-original-${canvas.id}`);
+    canvas.parentNode.insertBefore(marcador, canvas);
+
+    graficoAmpliado = {
+        canvas,
+        marcador,
+        chart: obtenerInstanciaChart(canvas),
+        maintainAspectRatio: obtenerInstanciaChart(canvas)?.options?.maintainAspectRatio
+    };
+
+    tituloGraficoAmpliado.textContent = titulo || 'Gráfico';
+    contenedorGraficoAmpliado.appendChild(canvas);
+    modalGraficoAmpliado.style.display = 'block';
+
+    if (graficoAmpliado.chart) {
+        graficoAmpliado.chart.options.maintainAspectRatio = false;
+        graficoAmpliado.chart.resize();
+    }
+}
+
+function cerrarGraficoAmpliado() {
+    if (!graficoAmpliado) return;
+
+    const { canvas, marcador, maintainAspectRatio } = graficoAmpliado;
+    const chart = obtenerInstanciaChart(canvas);
+
+    marcador.parentNode.insertBefore(canvas, marcador);
+    marcador.remove();
+    modalGraficoAmpliado.style.display = 'none';
+
+    if (chart) {
+        chart.options.maintainAspectRatio = maintainAspectRatio !== undefined ? maintainAspectRatio : true;
+        chart.resize();
+    }
+
+    graficoAmpliado = null;
 }
 
 function dibujarGraficoPromedios(etapas) {
@@ -323,9 +453,101 @@ function dibujarGraficoHoras(porHora) {
     });
 }
 
+function dibujarGraficoTiempoCola(stats) {
+    const ctx = document.getElementById('chartTiempoCola');
+    if (chartTiempoCola) chartTiempoCola.destroy();
+
+    chartTiempoCola = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Con Tiempo en Fila', 'Sin Tiempo en Fila'],
+            datasets: [{
+                data: [stats.rutas_con_tiempo_en_fila || 0, stats.rutas_sin_tiempo_en_fila || 0],
+                backgroundColor: ['#70AD47', '#E67E22']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.label}: ${context.formattedValue}`
+                    }
+                }
+            }
+        }
+    });
+}
+
+function dibujarGraficoColaSupervisores(supervisores) {
+    const ctx = document.getElementById('chartColaSupervisores');
+    if (chartColaSupervisores) chartColaSupervisores.destroy();
+
+    const datos = supervisores.filter(item => item.cola_disponibles > 0).slice(0, 10);
+    if (datos.length === 0) {
+        chartColaSupervisores = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Sin datos'],
+                datasets: [{
+                    label: 'Promedio Cola (minutos)',
+                    data: [0],
+                    backgroundColor: '#8E44AD'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        return;
+    }
+
+    chartColaSupervisores = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: datos.map(item => item.nombre),
+            datasets: [{
+                label: 'Promedio Tiempo en Fila (minutos)',
+                data: datos.map(item => Math.round(item.promedio_cola / 60)),
+                backgroundColor: '#8E44AD'
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.dataset.label}: ${context.formattedValue} min`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
 function dibujarGraficoRanking(canvasId, chartActual, datos, label, asignarChart) {
     const ctx = document.getElementById(canvasId);
-    if (chartActual) chartActual.destroy();
+    if (chartActual && typeof chartActual.destroy === 'function') {
+        chartActual.destroy();
+    }
 
     const top = datos.slice(0, 10);
     const chart = new Chart(ctx, {
@@ -376,6 +598,9 @@ function renderizarInsights(stats, avanzado) {
     if (stats.cuello_botella) {
         insights.push(`La etapa mas lenta en promedio es ${stats.cuello_botella.nombre} (${stats.cuello_botella.promedio_fmt}).`);
     }
+    if (stats.tiempo_en_fila_promedio_fmt) {
+        insights.push(`Tiempo en Fila promedio: ${stats.tiempo_en_fila_promedio_fmt}.`);
+    }
     if (stats.ruta_mas_rapida) {
         insights.push(`Ruta mas rapida: ${stats.ruta_mas_rapida.numero_ruta} con ${stats.ruta_mas_rapida.tiempo_fmt}.`);
     }
@@ -400,6 +625,10 @@ function renderizarInsights(stats, avanzado) {
 }
 
 // ==================== RUTAS ====================
+
+function obtenerDuracionEtapa(ruta, nombre) {
+    return ruta.etapas.find(etapa => etapa.nombre === nombre)?.duracion_formateada || '-';
+}
 
 async function cargarRutas() {
     try {
@@ -443,15 +672,15 @@ async function cargarRutas() {
                 <td>${ruta.usuario}</td>
                 <td>${new Date(ruta.fecha).toLocaleDateString('es-ES')}</td>
                 <td><span class="estado-${ruta.estado}">${ruta.estado}</span></td>
-                <td>${ruta.etapas[0]?.duracion_formateada || '-'}</td>
-                <td>${ruta.etapas[1]?.duracion_formateada || '-'}</td>
-                <td>${ruta.etapas[2]?.duracion_formateada || '-'}</td>
-                <td>${ruta.etapas[3]?.duracion_formateada || '-'}</td>
-                <td>${ruta.etapas[4]?.duracion_formateada || '-'}</td>
+                <td>${obtenerDuracionEtapa(ruta, 'Matinal')}</td>
+                <td>${obtenerDuracionEtapa(ruta, 'Conteo de Carga')}</td>
+                <td>${obtenerDuracionEtapa(ruta, 'Check de Salida')}</td>
+                <td>${obtenerDuracionEtapa(ruta, 'Botón de Pánico')}</td>
+                <td>${obtenerDuracionEtapa(ruta, 'Tiempo en Fila')}</td>
                 <td>${ruta.tiempo_total_formateado}</td>
                 <td>
                     <button class="btn btn-primary" onclick="verDetallesRuta(${ruta.id})">Ver</button>
-                    <button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>
+                    ${rolActual === 'admin' ? `<button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>` : ''}
                 </td>
             `;
             
@@ -560,7 +789,7 @@ async function cargarHistorialAdmin() {
                 </div>
                 <div class="history-actions">
                     <button class="btn btn-primary" onclick="verDetallesRuta(${ruta.id})">Ver</button>
-                    <button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>
+                    ${rolActual === 'admin' ? `<button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>` : ''}
                 </div>
             </article>
         `).join('');
@@ -628,6 +857,100 @@ async function limpiarDatosRutas() {
     } catch (error) {
         console.error('Error:', error);
         alert('No se pudo limpiar la data');
+    }
+}
+
+async function cargarUsuarios() {
+    if (!bodyTablaUsuarios) return;
+
+    try {
+        const response = await fetchAdmin(`${ADMIN_BASE}/usuarios`);
+        const usuarios = await response.json();
+
+        if (!usuarios.length) {
+            bodyTablaUsuarios.innerHTML = '<tr><td colspan="5" class="loading">No hay usuarios</td></tr>';
+            return;
+        }
+
+        bodyTablaUsuarios.innerHTML = usuarios.map(usuario => `
+            <tr>
+                <td>${usuario.nombre}</td>
+                <td>${usuario.email}</td>
+                <td>${usuario.rol}</td>
+                <td>${usuario.activo ? 'Activo' : 'Inactivo'}</td>
+                <td>
+                    <button class="btn btn-primary" onclick="editarUsuario(JSON.parse(decodeURIComponent('${encodeURIComponent(JSON.stringify(usuario))}')))">Editar</button>
+                    <button class="btn btn-danger" onclick="eliminarUsuario(${usuario.id})">Eliminar</button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Error:', error);
+        bodyTablaUsuarios.innerHTML = `<tr><td colspan="5" class="loading">${error.message}</td></tr>`;
+    }
+}
+
+async function guardarUsuario() {
+    const id = usuarioId.value;
+    const payload = {
+        nombre: usuarioNombre.value.trim(),
+        email: usuarioEmail.value.trim(),
+        rol: usuarioRol.value,
+        activo: usuarioActivo.checked
+    };
+
+    if (usuarioPassword.value) {
+        payload.password = usuarioPassword.value;
+    }
+
+    if (!id && !payload.password) {
+        alert('La contraseña es obligatoria para usuarios nuevos');
+        return;
+    }
+
+    try {
+        await fetchAdmin(`${ADMIN_BASE}/usuarios${id ? '/' + id : ''}`, {
+            method: id ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        limpiarFormularioUsuario();
+        await cargarUsuarios();
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message);
+    }
+}
+
+function editarUsuario(usuario) {
+    usuarioId.value = usuario.id;
+    usuarioNombre.value = usuario.nombre;
+    usuarioEmail.value = usuario.email;
+    usuarioRol.value = usuario.rol;
+    usuarioActivo.checked = usuario.activo;
+    usuarioPassword.value = '';
+    usuarioPassword.placeholder = 'Nueva contraseña (opcional)';
+}
+
+function limpiarFormularioUsuario() {
+    usuarioId.value = '';
+    usuarioNombre.value = '';
+    usuarioEmail.value = '';
+    usuarioPassword.value = '';
+    usuarioPassword.placeholder = 'Contraseña';
+    usuarioRol.value = 'operador';
+    usuarioActivo.checked = true;
+}
+
+async function eliminarUsuario(id) {
+    if (!confirm('¿Eliminar este usuario?')) return;
+
+    try {
+        await fetchAdmin(`${ADMIN_BASE}/usuarios/${id}`, { method: 'DELETE' });
+        await cargarUsuarios();
+    } catch (error) {
+        console.error('Error:', error);
+        alert(error.message);
     }
 }
 
@@ -747,6 +1070,7 @@ function dibujarGraficoComparativa(etapas) {
 }
 
 // Cargar seccion inicial
+inicializarControlesGraficos();
 const seccionInicial = window.location.hash ? window.location.hash.replace('#', '') : 'dashboard';
 if (document.getElementById(seccionInicial)) {
     mostrarSeccion(seccionInicial);

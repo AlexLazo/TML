@@ -13,6 +13,7 @@ class Usuario(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     es_admin = db.Column(db.Boolean, default=False)
+    rol = db.Column(db.String(30), default='operador')  # admin, supervisor, operador
     activo = db.Column(db.Boolean, default=True)
     fecha_creacion = db.Column(db.DateTime, default=datetime.utcnow)
     

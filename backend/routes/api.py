@@ -83,8 +83,8 @@ def crear_ruta():
     data = request.get_json(silent=True) or {}
     numero_ruta = (data.get('numero_ruta') or '').strip().upper()
 
-    if not re.fullmatch(r'DS00([0-9]{1,2}|[A-Z]{1,2})', numero_ruta):
-        return jsonify({'error': 'La ruta debe usar DS00 seguido de maximo 2 numeros o 2 letras'}), 400
+    if not re.fullmatch(r'DS00[A-Z0-9]{1,2}', numero_ruta):
+        return jsonify({'error': 'La ruta debe usar DS00 seguido de maximo 2 letras o numeros'}), 400
     
     nueva_ruta = Ruta(
         usuario_id=data.get('usuario_id'),

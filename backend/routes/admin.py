@@ -29,6 +29,17 @@ def _fmt_segundos(segundos):
     return f"{segundos // 3600:02d}:{(segundos % 3600) // 60:02d}:{segundos % 60:02d}"
 
 
+def _percentil(valores, percentil):
+    if not valores:
+        return 0
+    ordenados = sorted(valores)
+    posicion = (len(ordenados) - 1) * percentil
+    inferior = int(posicion)
+    superior = min(inferior + 1, len(ordenados) - 1)
+    peso_superior = posicion - inferior
+    return int(ordenados[inferior] * (1 - peso_superior) + ordenados[superior] * peso_superior)
+
+
 def _ruta_fija(numero_ruta):
     return RutaFija.query.filter_by(numero_ruta=numero_ruta).first()
 
@@ -470,6 +481,8 @@ def estadisticas_general():
     dias = request.args.get('dias', default=30, type=int)
     fecha_inicio_str = request.args.get('fecha_inicio')
     fecha_final_str = request.args.get('fecha_final')
+    objetivo_total = request.args.get('objetivo_total_min', default=45, type=int) * 60
+    objetivo_fila = request.args.get('objetivo_fila_min', default=5, type=int) * 60
 
     fecha_inicio = None
     if fecha_inicio_str:
@@ -530,7 +543,8 @@ def estadisticas_general():
         if fila is not None:
             tiempos_fila.append(fila)
 
-    promedio_total = int(sum(total for _, total in tiempos_totales) / len(tiempos_totales)) if tiempos_totales else 0
+    valores_totales = [total for _, total in tiempos_totales]
+    promedio_total = int(sum(valores_totales) / len(valores_totales)) if valores_totales else 0
     ruta_mas_rapida = min(tiempos_totales, key=lambda item: item[1], default=None)
     ruta_mas_lenta = max(tiempos_totales, key=lambda item: item[1], default=None)
     cuello_botella = max(etapas_promedio.items(), key=lambda item: item[1]['promedio'], default=None)
@@ -544,6 +558,17 @@ def estadisticas_general():
         'completada': rutas_completadas,
         'cancelada': rutas_canceladas
     }
+    p50_total = _percentil(valores_totales, 0.50)
+    p90_total = _percentil(valores_totales, 0.90)
+    p95_total = _percentil(valores_totales, 0.95)
+    p50_fila = _percentil(tiempos_fila, 0.50)
+    p90_fila = _percentil(tiempos_fila, 0.90)
+    p95_fila = _percentil(tiempos_fila, 0.95)
+    rutas_en_objetivo_total = sum(1 for total in valores_totales if total <= objetivo_total)
+    rutas_en_objetivo_fila = sum(1 for fila in tiempos_fila if fila <= objetivo_fila)
+    cobertura_fila = (rutas_con_tiempo_fila / rutas_totales * 100) if rutas_totales else 0
+    cumplimiento_total = (rutas_en_objetivo_total / len(valores_totales) * 100) if valores_totales else 0
+    cumplimiento_fila = (rutas_en_objetivo_fila / len(tiempos_fila) * 100) if tiempos_fila else 0
 
     return jsonify({
         'rutas_totales': rutas_totales,
@@ -576,6 +601,27 @@ def estadisticas_general():
         'tiempo_en_fila_maximo': tiempo_fila_maximo,
         'rutas_con_tiempo_en_fila': rutas_con_tiempo_fila,
         'rutas_sin_tiempo_en_fila': rutas_totales - rutas_con_tiempo_fila,
+        'cobertura_tiempo_fila_pct': round(cobertura_fila, 1),
+        'p50_total': p50_total,
+        'p50_total_fmt': _fmt_segundos(p50_total),
+        'p90_total': p90_total,
+        'p90_total_fmt': _fmt_segundos(p90_total),
+        'p95_total': p95_total,
+        'p95_total_fmt': _fmt_segundos(p95_total),
+        'p50_fila': p50_fila,
+        'p50_fila_fmt': _fmt_segundos(p50_fila),
+        'p90_fila': p90_fila,
+        'p90_fila_fmt': _fmt_segundos(p90_fila),
+        'p95_fila': p95_fila,
+        'p95_fila_fmt': _fmt_segundos(p95_fila),
+        'objetivo_total_segundos': objetivo_total,
+        'objetivo_total_fmt': _fmt_segundos(objetivo_total),
+        'rutas_en_objetivo_total': rutas_en_objetivo_total,
+        'cumplimiento_objetivo_total_pct': round(cumplimiento_total, 1),
+        'objetivo_fila_segundos': objetivo_fila,
+        'objetivo_fila_fmt': _fmt_segundos(objetivo_fila),
+        'rutas_en_objetivo_fila': rutas_en_objetivo_fila,
+        'cumplimiento_objetivo_fila_pct': round(cumplimiento_fila, 1),
         'periodo_dias': dias
     })
 
@@ -586,6 +632,8 @@ def analisis_avanzado():
     dias = request.args.get('dias', default=30, type=int)
     fecha_inicio_str = request.args.get('fecha_inicio')
     fecha_final_str = request.args.get('fecha_final')
+    objetivo_total = request.args.get('objetivo_total_min', default=45, type=int) * 60
+    objetivo_fila = request.args.get('objetivo_fila_min', default=5, type=int) * 60
 
     fecha_inicio = None
     if fecha_inicio_str:
@@ -607,7 +655,18 @@ def analisis_avanzado():
     ranking_etapas = {}
     supervisores = {}
     contratistas = {}
+    canales = {}
+    tendencia_diaria = {}
+    distribucion_total = {
+        '0-10 min': 0,
+        '10-20 min': 0,
+        '20-30 min': 0,
+        '30-45 min': 0,
+        '45+ min': 0
+    }
     rutas_problematicas = []
+    rutas_lentas = []
+    rutas_cola = []
 
     for ruta in rutas:
         por_hora[str(ruta.fecha.hour).zfill(2)] += 1
@@ -617,6 +676,99 @@ def analisis_avanzado():
         ruta_fija = _ruta_fija(ruta.numero_ruta)
         supervisor = ruta_fija.supervisor if ruta_fija and ruta_fija.supervisor else 'Sin supervisor'
         contratista = ruta_fija.contratista if ruta_fija and ruta_fija.contratista else 'Sin contratista'
+        canal = ruta_fija.canal if ruta_fija and ruta_fija.canal else 'Sin canal'
+        fecha_key = ruta.fecha.strftime('%Y-%m-%d')
+
+        if fecha_key not in tendencia_diaria:
+            tendencia_diaria[fecha_key] = {'total': 0, 'completadas': 0, 'canceladas': 0, 'en_objetivo': 0}
+        tendencia_diaria[fecha_key]['total'] += 1
+        if ruta.estado == 'completada':
+            tendencia_diaria[fecha_key]['completadas'] += 1
+        if ruta.estado == 'cancelada':
+            tendencia_diaria[fecha_key]['canceladas'] += 1
+        if ruta.estado == 'completada' and total and total <= objetivo_total:
+            tendencia_diaria[fecha_key]['en_objetivo'] += 1
+
+        if canal not in canales:
+            canales[canal] = {'rutas': 0, 'completadas': 0}
+        canales[canal]['rutas'] += 1
+        if ruta.estado == 'completada':
+            canales[canal]['completadas'] += 1
+
+        if ruta.estado == 'completada' and total:
+            minutos = total / 60
+            if minutos < 10:
+                distribucion_total['0-10 min'] += 1
+            elif minutos < 20:
+                distribucion_total['10-20 min'] += 1
+            elif minutos < 30:
+                distribucion_total['20-30 min'] += 1
+            elif minutos < 45:
+                distribucion_total['30-45 min'] += 1
+            else:
+                distribucion_total['45+ min'] += 1
+            rutas_lentas.append({
+                'numero_ruta': ruta.numero_ruta,
+                'estado': ruta.estado,
+                'tiempo_segundos': total,
+                'tiempo_fmt': _fmt_segundos(total),
+                'supervisor': supervisor,
+                'contratista': contratista
+            })
+
+        if tiempo_fila is not None:
+            rutas_cola.append({
+                'numero_ruta': ruta.numero_ruta,
+                'estado': ruta.estado,
+                'tiempo_segundos': tiempo_fila,
+                'tiempo_fmt': _fmt_segundos(tiempo_fila),
+                'supervisor': supervisor
+            })
+
+        if ruta.estado != 'completada' and pendientes > 0:
+            rutas_problematicas.append({
+                'id': ruta.id,
+                'numero_ruta': ruta.numero_ruta,
+                'estado': ruta.estado,
+                'pendientes': pendientes,
+                'supervisor': supervisor,
+                'contratista': contratista,
+                'motivo': 'Etapas pendientes',
+                'tiempo_fmt': _fmt_segundos(total)
+            })
+        elif ruta.estado == 'completada' and total and total > objetivo_total:
+            rutas_problematicas.append({
+                'id': ruta.id,
+                'numero_ruta': ruta.numero_ruta,
+                'estado': ruta.estado,
+                'pendientes': pendientes,
+                'supervisor': supervisor,
+                'contratista': contratista,
+                'motivo': 'Fuera de objetivo',
+                'tiempo_fmt': _fmt_segundos(total)
+            })
+        elif tiempo_fila is not None and tiempo_fila > objetivo_fila:
+            rutas_problematicas.append({
+                'id': ruta.id,
+                'numero_ruta': ruta.numero_ruta,
+                'estado': ruta.estado,
+                'pendientes': pendientes,
+                'supervisor': supervisor,
+                'contratista': contratista,
+                'motivo': 'Tiempo en fila alto',
+                'tiempo_fmt': _fmt_segundos(tiempo_fila)
+            })
+        elif ruta.estado == 'cancelada':
+            rutas_problematicas.append({
+                'id': ruta.id,
+                'numero_ruta': ruta.numero_ruta,
+                'estado': ruta.estado,
+                'pendientes': pendientes,
+                'supervisor': supervisor,
+                'contratista': contratista,
+                'motivo': 'Ruta cancelada',
+                'tiempo_fmt': _fmt_segundos(total)
+            })
 
         for bucket, nombre in ((supervisores, supervisor), (contratistas, contratista)):
             if nombre not in bucket:
@@ -626,7 +778,10 @@ def analisis_avanzado():
                     'tiempo_total': 0,
                     'con_tiempo': 0,
                     'cola_total': 0,
-                    'cola_count': 0
+                    'cola_count': 0,
+                    'tiempos_totales': [],
+                    'tiempos_cola': [],
+                    'etapas': {}
                 }
             bucket[nombre]['rutas'] += 1
             if ruta.estado == 'completada':
@@ -634,18 +789,20 @@ def analisis_avanzado():
             if total:
                 bucket[nombre]['tiempo_total'] += total
                 bucket[nombre]['con_tiempo'] += 1
+                bucket[nombre]['tiempos_totales'].append(total)
             if tiempo_fila is not None:
                 bucket[nombre]['cola_total'] += tiempo_fila
                 bucket[nombre]['cola_count'] += 1
+                bucket[nombre]['tiempos_cola'].append(tiempo_fila)
 
-        if ruta.estado != 'completada' or pendientes:
-            rutas_problematicas.append({
-                'numero_ruta': ruta.numero_ruta,
-                'estado': ruta.estado,
-                'pendientes': pendientes,
-                'fecha': ruta.fecha.isoformat(),
-                'tiempo_en_fila': _fmt_segundos(tiempo_fila) if tiempo_fila is not None else 'Pendiente'
-            })
+            for etapa in ruta.etapas:
+                if etapa.duracion_segundos is None:
+                    continue
+                etapa_nombre = etapa.nombre
+                if etapa_nombre not in bucket[nombre]['etapas']:
+                    bucket[nombre]['etapas'][etapa_nombre] = {'total': 0, 'count': 0}
+                bucket[nombre]['etapas'][etapa_nombre]['total'] += etapa.duracion_segundos
+                bucket[nombre]['etapas'][etapa_nombre]['count'] += 1
 
         for etapa in ruta.etapas:
             if etapa.duracion_segundos is None:
@@ -675,6 +832,27 @@ def analisis_avanzado():
         for nombre, data in bucket.items():
             promedio = int(data['tiempo_total'] / data['con_tiempo']) if data['con_tiempo'] else 0
             promedio_cola = int(data['cola_total'] / data['cola_count']) if data['cola_count'] else 0
+            etapas = []
+            for etapa_nombre, etapa_data in data['etapas'].items():
+                promedio_etapa = int(etapa_data['total'] / etapa_data['count']) if etapa_data['count'] else 0
+                etapas.append({
+                    'nombre': etapa_nombre,
+                    'promedio': promedio_etapa,
+                    'promedio_fmt': _fmt_segundos(promedio_etapa),
+                    'cantidad': etapa_data['count']
+                })
+            etapas.sort(key=lambda item: item['promedio'], reverse=True)
+            p50_total = _percentil(data['tiempos_totales'], 0.50)
+            p90_total = _percentil(data['tiempos_totales'], 0.90)
+            p95_total = _percentil(data['tiempos_totales'], 0.95)
+            p50_cola = _percentil(data['tiempos_cola'], 0.50)
+            p90_cola = _percentil(data['tiempos_cola'], 0.90)
+            p95_cola = _percentil(data['tiempos_cola'], 0.95)
+            fuera_total = sum(1 for t in data['tiempos_totales'] if t > objetivo_total)
+            fuera_cola = sum(1 for t in data['tiempos_cola'] if t > objetivo_fila)
+            cumplimiento_total = round((1 - fuera_total / len(data['tiempos_totales']) * 100) if data['tiempos_totales'] else 0, 1)
+            cumplimiento_cola = round((1 - fuera_cola / len(data['tiempos_cola']) * 100) if data['tiempos_cola'] else 0, 1)
+
             resumen.append({
                 'nombre': nombre,
                 'rutas': data['rutas'],
@@ -684,15 +862,52 @@ def analisis_avanzado():
                 'promedio_fmt': _fmt_segundos(promedio),
                 'promedio_cola': promedio_cola,
                 'promedio_cola_fmt': _fmt_segundos(promedio_cola),
-                'cola_disponibles': data['cola_count']
+                'cola_disponibles': data['cola_count'],
+                'p50_total': p50_total,
+                'p90_total': p90_total,
+                'p95_total': p95_total,
+                'p50_cola': p50_cola,
+                'p90_cola': p90_cola,
+                'p95_cola': p95_cola,
+                'rutas_en_objetivo_total': len(data['tiempos_totales']) - fuera_total,
+                'rutas_fuera_objetivo_total': fuera_total,
+                'cumplimiento_objetivo_total_pct': cumplimiento_total,
+                'rutas_en_objetivo_cola': len(data['tiempos_cola']) - fuera_cola,
+                'rutas_fuera_objetivo_cola': fuera_cola,
+                'cumplimiento_objetivo_cola_pct': cumplimiento_cola,
+                'etapas': etapas
             })
         resumen.sort(key=lambda item: (item['rutas'], item['completadas']), reverse=True)
         return resumen
+
+    def resumir_canales():
+        resumen = []
+        for nombre, data in canales.items():
+            resumen.append({
+                'nombre': nombre,
+                'rutas': data['rutas'],
+                'completadas': data['completadas'],
+                'tasa': round((data['completadas'] / data['rutas'] * 100) if data['rutas'] else 0, 1)
+            })
+        resumen.sort(key=lambda item: item['rutas'], reverse=True)
+        return resumen
+
+    for data in tendencia_diaria.values():
+        data['tasa_completacion'] = round((data['completadas'] / data['total'] * 100) if data['total'] else 0, 1)
+        data['cumplimiento_objetivo'] = round((data['en_objetivo'] / data['completadas'] * 100) if data['completadas'] else 0, 1)
+
+    rutas_lentas.sort(key=lambda item: item['tiempo_segundos'], reverse=True)
+    rutas_cola.sort(key=lambda item: item['tiempo_segundos'], reverse=True)
 
     return jsonify({
         'por_hora': por_hora,
         'ranking_etapas': etapas_ordenadas,
         'supervisores': resumir_bucket(supervisores),
         'contratistas': resumir_bucket(contratistas),
+        'canales': resumir_canales(),
+        'tendencia_diaria': tendencia_diaria,
+        'distribucion_total': distribucion_total,
+        'top_rutas_lentas': rutas_lentas[:10],
+        'top_rutas_cola': rutas_cola[:10],
         'rutas_problematicas': rutas_problematicas[:10]
     })

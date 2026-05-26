@@ -8,8 +8,16 @@ let chartEstados = null;
 let chartHoras = null;
 let chartSupervisores = null;
 let chartColaSupervisores = null;
+let chartEtapasSupervisor = null;
+let chartCumplimientoSupervisores = null;
 let chartContratistas = null;
 let chartTiempoCola = null;
+let chartSlaCumplimiento = null;
+let chartTendenciaCumplimiento = null;
+let chartDistribucionTotal = null;
+let chartEtapasCriticas = null;
+let chartCanales = null;
+let chartTopRutasLentas = null;
 const rolActual = document.body.dataset.role || 'operador';
 
 // ==================== ELEMENTOS DEL DOM ====================
@@ -24,6 +32,11 @@ const statUsuariosActivos = document.getElementById('statUsuariosActivos');
 const statTiempoPromedio = document.getElementById('statTiempoPromedio');
 const statTiempoColaPromedio = document.getElementById('statTiempoColaPromedio');
 const statCuelloBotella = document.getElementById('statCuelloBotella');
+const statCumplimientoObjetivo = document.getElementById('statCumplimientoObjetivo');
+const statP90Ruta = document.getElementById('statP90Ruta');
+const statP90Fila = document.getElementById('statP90Fila');
+const statCoberturaFila = document.getElementById('statCoberturaFila');
+const statRutasCanceladas = document.getElementById('statRutasCanceladas');
 const listaInsights = document.getElementById('listaInsights');
 const listaRutasAtencion = document.getElementById('listaRutasAtencion');
 
@@ -67,7 +80,9 @@ const detallesRutaContenido = document.getElementById('detallesRutaContenido');
 const closeBtn = document.querySelector('.close');
 const modalGraficoAmpliado = document.getElementById('modalGraficoAmpliado');
 const tituloGraficoAmpliado = document.getElementById('tituloGraficoAmpliado');
+const subtituloGraficoAmpliado = document.getElementById('subtituloGraficoAmpliado');
 const contenedorGraficoAmpliado = document.getElementById('contenedorGraficoAmpliado');
+const chartModalMain = document.getElementById('chartModalMain');
 const btnCerrarGraficoAmpliado = document.getElementById('btnCerrarGraficoAmpliado');
 let graficoAmpliado = null;
 
@@ -88,7 +103,7 @@ window.addEventListener('click', (e) => {
 });
 btnCerrarGraficoAmpliado?.addEventListener('click', cerrarGraficoAmpliado);
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modalGraficoAmpliado?.style.display === 'block') {
+    if (e.key === 'Escape' && modalGraficoAmpliado && modalGraficoAmpliado.style.display !== 'none') {
         cerrarGraficoAmpliado();
     }
 });
@@ -147,6 +162,135 @@ function mostrarSeccion(seccion) {
 
 // ==================== DASHBOARD ====================
 
+const chartPalette = ['#118DFF', '#12239E', '#E66C37', '#6B007B', '#E1C233', '#2D9F7C', '#D64550', '#6F7A8A'];
+
+if (window.Chart) {
+    Chart.defaults.font.family = "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif";
+    Chart.defaults.color = '#344054';
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.boxWidth = 8;
+
+    Chart.register({
+        id: 'dashboardDataLabelPlugin',
+        afterDatasetsDraw(chart) {
+            try {
+                if (!chart.data?.datasets || !chart.ctx) return;
+
+                const defaultConfig = {
+                    display: true,
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    offset: 6,
+                    font: { size: 12, weight: 700, family: 'Segoe UI, sans-serif' },
+                    formatter: (value) => `${value}`
+                };
+                const dataLabelConfig = { ...defaultConfig, ...(chart.options.plugins?.dataLabels || {}) };
+                if (!dataLabelConfig.display) return;
+
+                const ctx = chart.ctx;
+                ctx.save();
+                ctx.font = `${dataLabelConfig.font.weight} ${dataLabelConfig.font.size}px ${dataLabelConfig.font.family}`;
+                ctx.fillStyle = dataLabelConfig.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    const meta = chart.getDatasetMeta(datasetIndex);
+                    if (!meta?.data) return;
+
+                    meta.data.forEach((element, index) => {
+                        let value = dataset.data[index];
+                        if (value === null || value === undefined) return;
+
+                        if (typeof value === 'object') {
+                            if (value === null) {
+                                return;
+                            }
+                            if ('y' in value) {
+                                value = value.y;
+                            } else if ('x' in value) {
+                                value = value.x;
+                            } else {
+                                value = JSON.stringify(value);
+                            }
+                        }
+
+                        let label = dataLabelConfig.formatter(value, dataset, index);
+                        if (label === null || label === undefined) return;
+                        if (typeof label !== 'string') {
+                            label = String(label);
+                        }
+
+                        const position = element.tooltipPosition?.();
+                        if (!position) return;
+
+                        let x = position.x;
+                        let y = position.y - 8;
+                        if (chart.config.type === 'bar' || dataset.type === 'bar') {
+                            y = position.y - 6;
+                        }
+                        if (chart.config.type === 'line' || dataset.type === 'line') {
+                            y = position.y - 10;
+                        }
+                        ctx.fillText(label, x, y);
+                    });
+                });
+
+                ctx.restore();
+            } catch (error) {
+                console.warn('dashboardDataLabelPlugin error:', error);
+            }
+        }
+    });
+}
+
+function minutosDesdeSegundos(segundos) {
+    return Number(((segundos || 0) / 60).toFixed(1));
+}
+
+function formatearTiempoGrafico(segundos) {
+    if (segundos == null) return '0 min';
+    const minutos = segundos / 60;
+    if (minutos < 1) {
+        return `${Math.round(segundos)}s`;
+    }
+    return `${Number(minutos.toFixed(1))} min`;
+}
+
+function opcionesBase(extra = {}) {
+    const base = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom' },
+            dataLabels: {
+                display: true,
+                color: '#1f2937',
+                anchor: 'end',
+                align: 'end',
+                offset: 6,
+                font: { size: 12, weight: 700, family: 'Segoe UI, sans-serif' },
+                formatter: (value) => `${value}`
+            }
+        },
+        scales: {
+            x: { grid: { color: '#edf1f7' } },
+            y: { beginAtZero: true, grid: { color: '#edf1f7' } }
+        }
+    };
+
+    if (extra.plugins) {
+        base.plugins = { ...base.plugins, ...extra.plugins };
+    }
+
+    return {
+        ...base,
+        ...extra,
+        plugins: { ...base.plugins, ...(extra.plugins || {}) }
+    };
+}
+
 async function fetchAdmin(url, options = {}) {
     const response = await fetch(url, options);
     if (response.status === 401) {
@@ -179,14 +323,12 @@ async function cargarDashboard() {
         if (supervisor) params.append('supervisor', supervisor);
         if (contratista) params.append('contratista', contratista);
 
-        const [statsRes, historialRes, avanzadoRes] = await Promise.all([
+        const [statsRes, avanzadoRes] = await Promise.all([
             fetchAdmin(`${ADMIN_BASE}/estadisticas-general?${params}`),
-            fetchAdmin(`${API_BASE}/historial-diario?dias=${periodo}`),
             fetchAdmin(`${ADMIN_BASE}/analisis-avanzado?${params}`)
         ]);
 
         const stats = await statsRes.json();
-        const historial = await historialRes.json();
         const avanzado = await avanzadoRes.json();
 
         // Actualizar cards
@@ -197,19 +339,36 @@ async function cargarDashboard() {
         statTiempoPromedio.textContent = stats.tiempo_promedio_total_fmt || '00:00:00';
         statTiempoColaPromedio.textContent = stats.tiempo_en_fila_promedio_fmt || '00:00:00';
         statCuelloBotella.textContent = stats.cuello_botella ? stats.cuello_botella.nombre : '-';
+        if (statCumplimientoObjetivo) statCumplimientoObjetivo.textContent = `${stats.cumplimiento_objetivo_total_pct || 0}%`;
+        if (statP90Ruta) statP90Ruta.textContent = stats.p90_total_fmt || '00:00:00';
+        if (statP90Fila) statP90Fila.textContent = stats.p90_fila_fmt || '00:00:00';
+        if (statCoberturaFila) statCoberturaFila.textContent = `${stats.cobertura_tiempo_fila_pct || 0}%`;
+        if (statRutasCanceladas) statRutasCanceladas.textContent = stats.rutas_canceladas || 0;
 
         // Gráfico de promedios
         dibujarGraficoPromedios(stats.etapas_promedio);
         
         // Gráfico de rutas diarias
-        dibujarGraficoRutasDiarias(historial);
+        dibujarGraficoRutasDiarias(avanzado.tendencia_diaria || {});
+        dibujarGraficoTendenciaCumplimiento(avanzado.tendencia_diaria || {});
 
         dibujarGraficoEstados(stats.estados || {});
         dibujarGraficoHoras(avanzado.por_hora || {});
+        dibujarGraficoSlaCumplimiento(stats);
+        dibujarGraficoDistribucionTotal(avanzado.distribucion_total || {});
+        dibujarGraficoEtapasCriticas(avanzado.ranking_etapas || []);
+        dibujarGraficoCanales(avanzado.canales || []);
+        dibujarGraficoTopRutasLentas(avanzado.top_rutas_lentas || []);
         dibujarGraficoRanking('chartSupervisores', chartSupervisores, avanzado.supervisores || [], 'Supervisor', chart => chartSupervisores = chart);
+        dibujarGraficoCumplimientoSupervisores(avanzado.supervisores || []);
         dibujarGraficoTiempoCola(stats);
         dibujarGraficoRanking('chartContratistas', chartContratistas, avanzado.contratistas || [], 'Contratista', chart => chartContratistas = chart);
         dibujarGraficoColaSupervisores(avanzado.supervisores || []);
+        if (typeof dibujarGraficoEtapasSupervisor === 'function') {
+            dibujarGraficoEtapasSupervisor(avanzado.supervisores || []);
+        } else {
+            console.warn('Función dibujarGraficoEtapasSupervisor no encontrada');
+        }
         renderizarInsights(stats, avanzado);
         await cargarOpcionesFiltros();
     } catch (error) {
@@ -269,44 +428,59 @@ function obtenerInstanciaChart(canvas) {
 }
 
 function abrirGraficoAmpliado(canvas, titulo) {
-    if (!modalGraficoAmpliado || !contenedorGraficoAmpliado || !canvas) return;
-    if (graficoAmpliado) cerrarGraficoAmpliado();
+    if (!modalGraficoAmpliado || !chartModalMain || !canvas) return;
+    if (graficoAmpliado && graficoAmpliado.modalChart) cerrarGraficoAmpliado();
 
-    const marcador = document.createComment(`posicion-original-${canvas.id}`);
-    canvas.parentNode.insertBefore(marcador, canvas);
+    const originalChart = obtenerInstanciaChart(canvas);
+    if (!originalChart) return;
 
-    graficoAmpliado = {
-        canvas,
-        marcador,
-        chart: obtenerInstanciaChart(canvas),
-        maintainAspectRatio: obtenerInstanciaChart(canvas)?.options?.maintainAspectRatio
+    const data = window.structuredClone ? structuredClone(originalChart.config.data) : JSON.parse(JSON.stringify(originalChart.config.data));
+    const options = {
+        ...originalChart.config.options,
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false
     };
 
     tituloGraficoAmpliado.textContent = titulo || 'Gráfico';
-    contenedorGraficoAmpliado.appendChild(canvas);
-    modalGraficoAmpliado.style.display = 'block';
+    subtituloGraficoAmpliado.textContent = `Análisis ampliado para auditoría y presentación ejecutiva.`;
+    chartModalMain.innerHTML = '';
 
-    if (graficoAmpliado.chart) {
-        graficoAmpliado.chart.options.maintainAspectRatio = false;
-        graficoAmpliado.chart.resize();
-    }
+    modalGraficoAmpliado.style.display = 'flex';
+
+    const modalCanvas = document.createElement('canvas');
+    modalCanvas.id = 'chartModalCanvas';
+    modalCanvas.style.width = '100%';
+    modalCanvas.style.height = '100%';
+    chartModalMain.appendChild(modalCanvas);
+
+    const modalChart = new Chart(modalCanvas, {
+        type: originalChart.config.type,
+        data,
+        options
+    });
+
+    graficoAmpliado = {
+        originalCanvas: canvas,
+        originalChart,
+        modalCanvas,
+        modalChart
+    };
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => modalChart.resize());
+    });
 }
 
 function cerrarGraficoAmpliado() {
-    if (!graficoAmpliado) return;
+    if (!graficoAmpliado?.modalChart) return;
 
-    const { canvas, marcador, maintainAspectRatio } = graficoAmpliado;
-    const chart = obtenerInstanciaChart(canvas);
-
-    marcador.parentNode.insertBefore(canvas, marcador);
-    marcador.remove();
-    modalGraficoAmpliado.style.display = 'none';
-
-    if (chart) {
-        chart.options.maintainAspectRatio = maintainAspectRatio !== undefined ? maintainAspectRatio : true;
-        chart.resize();
+    graficoAmpliado.modalChart.destroy();
+    if (graficoAmpliado.modalCanvas && graficoAmpliado.modalCanvas.parentNode) {
+        graficoAmpliado.modalCanvas.parentNode.removeChild(graficoAmpliado.modalCanvas);
     }
 
+    modalGraficoAmpliado.style.display = 'none';
     graficoAmpliado = null;
 }
 
@@ -316,7 +490,7 @@ function dibujarGraficoPromedios(etapas) {
     if (chartPromedios) chartPromedios.destroy();
 
     const labels = Object.keys(etapas);
-    const datos = labels.map(etapa => Math.floor(etapas[etapa].promedio / 60)); // Convertir a minutos
+    const datos = labels.map(etapa => minutosDesdeSegundos(etapas[etapa].promedio));
 
     chartPromedios = new Chart(ctx, {
         type: 'bar',
@@ -334,11 +508,11 @@ function dibujarGraficoPromedios(etapas) {
                 ]
             }]
         },
-        options: {
-            responsive: true,
+        options: opcionesBase({
             plugins: {
-                legend: {
-                    display: true
+                legend: { display: true },
+                dataLabels: {
+                    formatter: value => `${value} min`
                 }
             },
             scales: {
@@ -346,7 +520,7 @@ function dibujarGraficoPromedios(etapas) {
                     beginAtZero: true
                 }
             }
-        }
+        })
     });
 }
 
@@ -394,6 +568,228 @@ function dibujarGraficoRutasDiarias(historial) {
             }
         }
     });
+}
+
+function dibujarGraficoTendenciaCumplimiento(tendencia) {
+    const ctx = document.getElementById('chartTendenciaCumplimiento');
+    if (!ctx) return;
+    if (chartTendenciaCumplimiento) chartTendenciaCumplimiento.destroy();
+
+    const fechas = Object.keys(tendencia).sort();
+    chartTendenciaCumplimiento = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: fechas,
+            datasets: [
+                {
+                    label: 'Total',
+                    data: fechas.map(f => tendencia[f].total || 0),
+                    borderColor: '#118DFF',
+                    backgroundColor: 'rgba(17, 141, 255, 0.12)',
+                    tension: 0.35,
+                    fill: true,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Completadas',
+                    data: fechas.map(f => tendencia[f].completadas || 0),
+                    borderColor: '#2D9F7C',
+                    backgroundColor: 'rgba(45, 159, 124, 0.10)',
+                    tension: 0.35,
+                    fill: true,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Cumplimiento %',
+                    data: fechas.map(f => tendencia[f].cumplimiento_objetivo || 0),
+                    borderColor: '#E1C233',
+                    backgroundColor: '#E1C233',
+                    tension: 0.25,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: opcionesBase({
+            scales: {
+                y: { beginAtZero: true, grid: { color: '#edf1f7' } },
+                y1: {
+                    beginAtZero: true,
+                    max: 100,
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: { callback: value => `${value}%` }
+                },
+                x: { grid: { color: '#edf1f7' } }
+            }
+        })
+    });
+}
+
+function dibujarGraficoSlaCumplimiento(stats) {
+    const ctx = document.getElementById('chartSlaCumplimiento');
+    if (!ctx) return;
+    if (chartSlaCumplimiento) chartSlaCumplimiento.destroy();
+
+    const dentro = stats.rutas_en_objetivo_total || 0;
+    const fuera = Math.max((stats.rutas_completadas || 0) - dentro, 0);
+    chartSlaCumplimiento = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Dentro del objetivo', 'Fuera del objetivo'],
+            datasets: [{
+                data: [dentro, fuera],
+                backgroundColor: ['#2D9F7C', '#D64550'],
+                borderWidth: 0
+            }]
+        },
+        options: opcionesBase({
+            cutout: '68%',
+            scales: {},
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        afterBody: () => `Meta: ${stats.objetivo_total_fmt || '00:45:00'}`
+                    }
+                }
+            }
+        })
+    });
+}
+
+function dibujarGraficoDistribucionTotal(distribucion) {
+    const ctx = document.getElementById('chartDistribucionTotal');
+    if (!ctx) return;
+    if (chartDistribucionTotal) chartDistribucionTotal.destroy();
+
+    const labels = Object.keys(distribucion);
+    chartDistribucionTotal = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Rutas completadas',
+                data: labels.map(label => distribucion[label] || 0),
+                backgroundColor: '#118DFF'
+            }]
+        },
+        options: opcionesBase({ plugins: { legend: { display: false } } })
+    });
+}
+
+function dibujarGraficoEtapasCriticas(etapas) {
+    const ctx = document.getElementById('chartEtapasCriticas');
+    if (!ctx) return;
+    if (chartEtapasCriticas) chartEtapasCriticas.destroy();
+
+    const top = etapas.slice(0, 8);
+    chartEtapasCriticas = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: top.map(item => item.nombre),
+            datasets: [
+                {
+                    label: 'Promedio min',
+                    data: top.map(item => minutosDesdeSegundos(item.promedio)),
+                    backgroundColor: '#118DFF'
+                },
+                {
+                    label: 'Maximo min',
+                    data: top.map(item => minutosDesdeSegundos(item.maximo)),
+                    backgroundColor: '#E66C37'
+                }
+            ]
+        },
+        options: opcionesBase({
+            indexAxis: 'y',
+            plugins: {
+                legend: { position: 'bottom' },
+                dataLabels: {
+                    formatter: value => `${value} min`
+                }
+            }
+        })
+    });
+}
+
+function dibujarGraficoCanales(canales) {
+    const ctx = document.getElementById('chartCanales');
+    if (!ctx) return;
+    if (chartCanales) chartCanales.destroy();
+
+    const top = canales.slice(0, 8);
+    chartCanales = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: top.map(item => item.nombre),
+            datasets: [
+                {
+                    label: 'Rutas',
+                    data: top.map(item => item.rutas),
+                    backgroundColor: '#12239E'
+                },
+                {
+                    label: 'Completadas',
+                    data: top.map(item => item.completadas),
+                    backgroundColor: '#2D9F7C'
+                }
+            ]
+        },
+        options: opcionesBase({ indexAxis: 'y' })
+    });
+}
+
+function dibujarGraficoTopRutasLentas(rutas) {
+    const ctx = document.getElementById('chartTopRutasLentas');
+    if (!ctx) return;
+    if (chartTopRutasLentas) chartTopRutasLentas.destroy();
+
+    const top = rutas.slice(0, 10);
+    chartTopRutasLentas = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: top.map(item => item.numero_ruta),
+            datasets: [{
+                label: 'Minutos',
+                data: top.map(item => minutosDesdeSegundos(item.tiempo_segundos)),
+                backgroundColor: top.map((_, index) => chartPalette[index % chartPalette.length])
+            }]
+        },
+        options: opcionesBase({
+            indexAxis: 'y',
+            plugins: {
+                legend: { display: false },
+                dataLabels: {
+                    formatter: (value, dataset, index) => {
+                        const item = top[index];
+                        return item?.tiempo_fmt || `${value} min`;
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: context => {
+                            const item = top[context.dataIndex];
+                            return `${item.tiempo_fmt} - ${item.supervisor}`;
+                        }
+                    }
+                }
+            }
+        })
+    });
+
+    chartTopRutasLentas.metaInfo = {
+        title: 'Top Rutas Más Lentas',
+        subtitle: 'Rutas con mayor tiempo total para auditar cuellos de botella.',
+        description: 'Este panel ayuda a defender qué rutas representan el mayor riesgo operativo.',
+        summary: top.length ? `La ruta más lenta es ${top[0].numero_ruta} con ${top[0].tiempo_fmt}.` : 'No hay rutas para el periodo.',
+        badges: ['Top 10', 'Auditoría', 'Tiempo Total'],
+        listTitle: 'Rutas críticas',
+        items: top.slice(0, 5).map(item => ({
+            label: item.numero_ruta,
+            value: item.tiempo_fmt,
+            note: `Supervisor: ${item.supervisor}`
+        }))
+    };
 }
 
 function dibujarGraficoEstados(estados) {
@@ -486,7 +882,11 @@ function dibujarGraficoColaSupervisores(supervisores) {
     const ctx = document.getElementById('chartColaSupervisores');
     if (chartColaSupervisores) chartColaSupervisores.destroy();
 
-    const datos = supervisores.filter(item => item.cola_disponibles > 0).slice(0, 10);
+    const datos = supervisores
+        .filter(item => item.cola_disponibles > 0)
+        .sort((a, b) => b.promedio_cola - a.promedio_cola)
+        .slice(0, 10);
+
     if (datos.length === 0) {
         chartColaSupervisores = new Chart(ctx, {
             type: 'bar',
@@ -519,18 +919,24 @@ function dibujarGraficoColaSupervisores(supervisores) {
             labels: datos.map(item => item.nombre),
             datasets: [{
                 label: 'Promedio Tiempo en Fila (minutos)',
-                data: datos.map(item => Math.round(item.promedio_cola / 60)),
+                data: datos.map(item => minutosDesdeSegundos(item.promedio_cola)),
                 backgroundColor: '#8E44AD'
             }]
         },
-        options: {
+        options: opcionesBase({
             indexAxis: 'y',
-            responsive: true,
             plugins: {
                 legend: { position: 'bottom' },
+                dataLabels: {
+                    formatter: value => `${value} min`
+                },
                 tooltip: {
                     callbacks: {
-                        label: context => `${context.dataset.label}: ${context.formattedValue} min`
+                        label: context => {
+                            const item = datos[context.dataIndex];
+                            const value = context.parsed?.x ?? context.parsed?.y ?? context.formattedValue;
+                            return `${context.dataset.label}: ${value} min · ${item.cola_disponibles} rutas con fila`;
+                        }
                     }
                 }
             },
@@ -539,8 +945,197 @@ function dibujarGraficoColaSupervisores(supervisores) {
                     beginAtZero: true
                 }
             }
-        }
+        })
     });
+}
+
+function dibujarGraficoEtapasSupervisor(supervisores) {
+    const ctx = document.getElementById('chartEtapasSupervisor');
+    if (!ctx) return;
+    if (chartEtapasSupervisor) chartEtapasSupervisor.destroy();
+
+    const filtered = supervisores.filter(item => item.etapas && item.etapas.length);
+    if (!filtered.length) {
+        chartEtapasSupervisor = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Sin datos'],
+                datasets: [{
+                    label: 'Promedio Etapas (minutos)',
+                    data: [0],
+                    backgroundColor: '#2D9F7C'
+                }]
+            },
+            options: opcionesBase({ plugins: { legend: { display: false } } })
+        });
+        return;
+    }
+
+    const stageOrder = ['Matinal', 'Conteo de Carga', 'Check de Salida', 'Botón de Pánico', 'Tiempo en Fila'];
+    const stageNames = Array.from(new Set(filtered.flatMap(item => item.etapas.map(e => e.nombre))));
+    stageNames.sort((a, b) => {
+        const ai = stageOrder.indexOf(a) === -1 ? stageOrder.length : stageOrder.indexOf(a);
+        const bi = stageOrder.indexOf(b) === -1 ? stageOrder.length : stageOrder.indexOf(b);
+        return ai - bi;
+    });
+
+    const supervisorsTop = filtered
+        .slice()
+        .sort((a, b) => b.promedio - a.promedio)
+        .slice(0, 6);
+
+    const datasets = stageNames.map((stageName, index) => ({
+        label: stageName,
+        data: supervisorsTop.map(supervisor => {
+            const etapa = supervisor.etapas.find(e => e.nombre === stageName);
+            return etapa ? minutosDesdeSegundos(etapa.promedio) : 0;
+        }),
+        backgroundColor: chartPalette[index % chartPalette.length]
+    }));
+
+    chartEtapasSupervisor = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: supervisorsTop.map(item => item.nombre),
+            datasets
+        },
+        options: opcionesBase({
+            indexAxis: 'y',
+            scales: {
+                x: {
+                    stacked: true,
+                    beginAtZero: true
+                },
+                y: {
+                    stacked: true
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                dataLabels: {
+                    formatter: value => `${value} min`
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.dataset.label}: ${context.formattedValue} min`
+                    }
+                }
+            }
+        })
+    });
+
+    chartEtapasSupervisor.metaInfo = {
+        title: 'Etapas por Supervisor',
+        subtitle: 'Comparación de tiempos promedio por etapa para supervisores más representativos.',
+        description: 'Sirve para identificar qué supervisores tienen etapas específicas más lentas.',
+        summary: supervisorsTop.length ? `Supervisor puntero: ${supervisorsTop[0].nombre} con ${supervisorsTop[0].promedio_fmt}.` : 'No hay datos suficientes.',
+        badges: ['Etapas', 'Supervisor', 'Auditoría'],
+        listTitle: 'Supervisores principales',
+        items: supervisorsTop.slice(0, 5).map(item => ({
+            label: item.nombre,
+            value: item.promedio_fmt,
+            note: `Fila promedio: ${item.promedio_cola_fmt}`
+        }))
+    };
+}
+
+function dibujarGraficoCumplimientoSupervisores(supervisores) {
+    const ctx = document.getElementById('chartCumplimientoSupervisores');
+    if (!ctx) return;
+    if (chartCumplimientoSupervisores) chartCumplimientoSupervisores.destroy();
+
+    const top = supervisores
+        .slice()
+        .sort((a, b) => b.rutas - a.rutas)
+        .slice(0, 6);
+
+    if (!top.length) {
+        chartCumplimientoSupervisores = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Sin datos'],
+                datasets: [{
+                    label: 'Cumplimiento %',
+                    data: [0],
+                    backgroundColor: '#2D9F7C'
+                }]
+            },
+            options: opcionesBase({ plugins: { legend: { display: false } } })
+        });
+        return;
+    }
+
+    chartCumplimientoSupervisores = new Chart(ctx, {
+        data: {
+            labels: top.map(item => item.nombre),
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Rutas',
+                    data: top.map(item => item.rutas),
+                    backgroundColor: '#4472C4',
+                    yAxisID: 'y'
+                },
+                {
+                    type: 'line',
+                    label: 'Cumplimiento %',
+                    data: top.map(item => item.tasa),
+                    borderColor: '#2D9F7C',
+                    backgroundColor: 'rgba(45, 159, 124, 0.2)',
+                    yAxisID: 'y1',
+                    tension: 0.35,
+                    fill: false,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }
+            ]
+        },
+        options: opcionesBase({
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    position: 'left'
+                },
+                y1: {
+                    beginAtZero: true,
+                    max: 100,
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: { callback: value => `${value}%` }
+                }
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: context => {
+                            if (context.dataset.type === 'line') {
+                                return `${context.dataset.label}: ${context.formattedValue}%`;
+                            }
+                            return `${context.dataset.label}: ${context.formattedValue}`;
+                        }
+                    }
+                }
+            }
+        })
+    });
+
+    chartCumplimientoSupervisores.metaInfo = {
+        title: 'Cumplimiento por Supervisor',
+        subtitle: 'Volumen de rutas y porcentaje de cumplimiento de meta por supervisor.',
+        description: 'Perfecto para auditoría: revela qué supervisores sostienen la meta y cuáles no.',
+        summary: top.length ? `Mejor supervisor: ${top[0].nombre} con ${top[0].tasa}% de cumplimiento.` : 'No hay datos suficientes para el periodo.',
+        badges: ['Cumplimiento', 'Meta 45 min', 'Auditoría'],
+        listTitle: 'Supervisores destacados',
+        items: top.slice(0, 5).map(item => ({
+            label: item.nombre,
+            value: `${item.tasa}%`,
+            note: `Rutas: ${item.rutas}`
+        }))
+    };
 }
 
 function dibujarGraficoRanking(canvasId, chartActual, datos, label, asignarChart) {
@@ -595,6 +1190,8 @@ function renderizarInsights(stats, avanzado) {
     const insights = [];
 
     insights.push(`Tasa de completacion del periodo: ${stats.tasa_completacion}.`);
+    insights.push(`Cumplimiento del objetivo de ruta (${stats.objetivo_total_fmt || '00:45:00'}): ${stats.cumplimiento_objetivo_total_pct || 0}%.`);
+    insights.push(`P90 de ruta: ${stats.p90_total_fmt || '00:00:00'}; P90 de fila: ${stats.p90_fila_fmt || '00:00:00'}.`);
     if (stats.cuello_botella) {
         insights.push(`La etapa mas lenta en promedio es ${stats.cuello_botella.nombre} (${stats.cuello_botella.promedio_fmt}).`);
     }
@@ -616,12 +1213,17 @@ function renderizarInsights(stats, avanzado) {
         return;
     }
 
-    listaRutasAtencion.innerHTML = rutas.map(ruta => `
-        <div class="attention-item">
-            <strong>${ruta.numero_ruta}</strong>
-            <span>${ruta.estado} · ${ruta.pendientes} etapas pendientes</span>
-        </div>
-    `).join('');
+    listaRutasAtencion.innerHTML = rutas.map(ruta => {
+        const motivo = ruta.motivo || (ruta.pendientes ? `${ruta.pendientes} etapas pendientes` : 'Requiere atención');
+        const tiempo = ruta.tiempo_fmt ? `<small>${ruta.tiempo_fmt}</small>` : '';
+        return `
+            <div class="attention-item">
+                <strong>${ruta.numero_ruta}</strong>
+                <span>${ruta.estado} · ${motivo}</span>
+                ${tiempo}
+            </div>
+        `;
+    }).join('');
 }
 
 // ==================== RUTAS ====================

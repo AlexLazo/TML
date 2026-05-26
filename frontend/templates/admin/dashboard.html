@@ -34,7 +34,17 @@
         <main class="main-content">
             <!-- Dashboard Section -->
             <section id="dashboard" class="content-section active">
-                <h1>Dashboard</h1>
+                <div class="dashboard-header">
+                    <div>
+                        <span class="dashboard-kicker">Centro de Control Operativo</span>
+                        <h1>Dashboard</h1>
+                        <p class="dashboard-subtitle">Lectura ejecutiva de cumplimiento, tiempos, cuellos de botella y rutas que necesitan atencion.</p>
+                    </div>
+                    <div class="dashboard-badge">
+                        <span>Objetivo ruta</span>
+                        <strong>45 min</strong>
+                    </div>
+                </div>
 
                 <div class="filter-section">
                     <select id="dashboardFiltroPeriodo" class="filter-input">
@@ -71,6 +81,26 @@
                         <h3>Tasa Completación</h3>
                         <p id="statTasaCompletacion" class="stat-value">0%</p>
                     </div>
+                    <div class="stat-card kpi-card gold">
+                        <h3>Cumplimiento Objetivo</h3>
+                        <p id="statCumplimientoObjetivo" class="stat-value">0%</p>
+                    </div>
+                    <div class="stat-card kpi-card">
+                        <h3>P90 Ruta</h3>
+                        <p id="statP90Ruta" class="stat-value stat-time">00:00:00</p>
+                    </div>
+                    <div class="stat-card kpi-card">
+                        <h3>P90 Fila</h3>
+                        <p id="statP90Fila" class="stat-value stat-time">00:00:00</p>
+                    </div>
+                    <div class="stat-card kpi-card">
+                        <h3>Cobertura Fila</h3>
+                        <p id="statCoberturaFila" class="stat-value">0%</p>
+                    </div>
+                    <div class="stat-card kpi-card danger">
+                        <h3>Canceladas</h3>
+                        <p id="statRutasCanceladas" class="stat-value">0</p>
+                    </div>
                     <div class="stat-card">
                         <h3>Usuarios Activos</h3>
                         <p id="statUsuariosActivos" class="stat-value">0</p>
@@ -90,9 +120,21 @@
                 </div>
 
                 <div class="charts-grid">
+                    <div class="chart-box chart-wide">
+                        <h3>Tendencia Operativa y Cumplimiento</h3>
+                        <canvas id="chartTendenciaCumplimiento"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Cumplimiento del Objetivo</h3>
+                        <canvas id="chartSlaCumplimiento"></canvas>
+                    </div>
                     <div class="chart-box">
                         <h3>Promedios por Etapa (minutos)</h3>
                         <canvas id="chartPromedios"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Etapas Criticas: Promedio vs Maximo</h3>
+                        <canvas id="chartEtapasCriticas"></canvas>
                     </div>
                     <div class="chart-box">
                         <h3>Rutas por Día (últimos 7 días)</h3>
@@ -107,8 +149,28 @@
                         <canvas id="chartHoras"></canvas>
                     </div>
                     <div class="chart-box">
+                        <h3>Distribucion de Tiempo Total</h3>
+                        <canvas id="chartDistribucionTotal"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Rutas por Canal</h3>
+                        <canvas id="chartCanales"></canvas>
+                    </div>
+                    <div class="chart-box chart-wide">
+                        <h3>Top Rutas Mas Lentas</h3>
+                        <canvas id="chartTopRutasLentas"></canvas>
+                    </div>
+                    <div class="chart-box">
                         <h3>Tiempo en Fila por Supervisor</h3>
                         <canvas id="chartColaSupervisores"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Etapas por Supervisor</h3>
+                        <canvas id="chartEtapasSupervisor"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Cumplimiento por Supervisor</h3>
+                        <canvas id="chartCumplimientoSupervisores"></canvas>
                     </div>
                     <div class="chart-box">
                         <h3>Rutas por Supervisor</h3>
@@ -330,10 +392,15 @@
     <div id="modalGraficoAmpliado" class="modal chart-modal">
         <div class="modal-content chart-modal-content">
             <div class="chart-modal-header">
-                <h2 id="tituloGraficoAmpliado">Gráfico</h2>
+                <div>
+                    <h2 id="tituloGraficoAmpliado">Gráfico</h2>
+                    <p id="subtituloGraficoAmpliado" class="chart-modal-subtitle">Comparativa detallada para análisis y auditoría.</p>
+                </div>
                 <button type="button" id="btnCerrarGraficoAmpliado" class="chart-modal-close" aria-label="Cerrar gráfico ampliado">&times;</button>
             </div>
-            <div id="contenedorGraficoAmpliado" class="chart-modal-body"></div>
+            <div id="contenedorGraficoAmpliado" class="chart-modal-body">
+                <div id="chartModalMain" class="chart-modal-main"></div>
+            </div>
         </div>
     </div>
 

@@ -44,15 +44,11 @@ window.addEventListener('click', (e) => {
 
 function normalizarCodigoRuta(valor) {
     const limpio = valor.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!limpio) return '';
-
-    const primerCaracter = limpio.charAt(0);
-    const patron = /[0-9]/.test(primerCaracter) ? /[^0-9]/g : /[^A-Z]/g;
-    return limpio.replace(patron, '').slice(0, 2);
+    return limpio.slice(0, 2);
 }
 
 function codigoRutaValido(codigo) {
-    return /^([0-9]{1,2}|[A-Z]{1,2})$/.test(codigo);
+    return /^[A-Z0-9]{1,2}$/.test(codigo);
 }
 
 function persistirRutaActiva(rutaId) {
@@ -99,7 +95,7 @@ async function iniciarNuevaRuta() {
     numeroRutaInput.value = numeroDigitos;
     
     if (!codigoRutaValido(numeroDigitos)) {
-        mostrarAlerta('Error', 'Ingresa un maximo de 2 numeros o 2 letras. Ej: 50, DE, DH, 12, 13');
+        mostrarAlerta('Error', 'Ingresa maximo 2 letras o numeros. Ej: A5, B6, DH, A3, 95, 99');
         return;
     }
 
@@ -669,7 +665,7 @@ function resetearFormulario() {
 function mostrarAlerta(titulo, mensaje) {
     modalTitle.textContent = titulo;
     modalMessage.textContent = mensaje;
-    modal.style.display = 'block';
+    modal.style.display = 'flex';
 }
 
 function cerrarModal() {

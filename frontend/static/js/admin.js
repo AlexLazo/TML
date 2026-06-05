@@ -1282,6 +1282,7 @@ async function cargarRutas() {
                 <td>${ruta.tiempo_total_formateado}</td>
                 <td>
                     <button class="btn btn-primary" onclick="verDetallesRuta(${ruta.id})">Ver</button>
+                    ${(rolActual === 'admin' || rolActual === 'supervisor') ? `<button class="btn btn-warning" onclick="editarRuta(${ruta.id})">Editar</button>` : ''}
                     ${rolActual === 'admin' ? `<button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>` : ''}
                 </td>
             `;
@@ -1391,6 +1392,7 @@ async function cargarHistorialAdmin() {
                 </div>
                 <div class="history-actions">
                     <button class="btn btn-primary" onclick="verDetallesRuta(${ruta.id})">Ver</button>
+                    ${(rolActual === 'admin' || rolActual === 'supervisor') ? `<button class="btn btn-warning" onclick="editarRuta(${ruta.id})">Editar</button>` : ''}
                     ${rolActual === 'admin' ? `<button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>` : ''}
                 </div>
             </article>
@@ -1678,4 +1680,295 @@ if (document.getElementById(seccionInicial)) {
     mostrarSeccion(seccionInicial);
 } else {
     cargarDashboard();
+}
+
+// ==================== EDICIÓN DE RUTAS ====================
+
+let _editarRutaId = null;
+
+// — Inyectar modal de edición en el DOM una sola vez —
+(function inyectarModalEdicion() {
+    if (document.getElementById('modalEditarRuta')) return;
+
+    const modal = document.createElement('div');
+    modal.id = 'modalEditarRuta';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content modal-large">
+            <span class="close" onclick="cerrarModalEditarRuta()">&times;</span>
+            <h2>Editar Ruta</h2>
+            <div id="editarRutaContenido"></div>
+            <div class="edit-modal-footer">
+                <button class="btn btn-primary" onclick="guardarEdicionRuta()">Guardar cambios</button>
+                <button class="btn btn-secondary" onclick="cerrarModalEditarRuta()">Cancelar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Cerrar al hacer clic fuera
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) cerrarModalEditarRuta();
+    });
+
+    // Estilos exclusivos del modal de edición
+    const style = document.createElement('style');
+    style.textContent = `
+        #modalEditarRuta .modal-content { max-width: 680px; }
+
+        .edit-section { margin-bottom: 20px; }
+        .edit-section h4 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #344054;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #e4e7ec;
+        }
+        .edit-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .edit-field { display: flex; flex-direction: column; gap: 4px; }
+        .edit-field.full { grid-column: 1 / -1; }
+        .edit-field label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #667085;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        .edit-field input,
+        .edit-field select,
+        .edit-field textarea {
+            padding: 8px 10px;
+            border: 1px solid #d0d5dd;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #101828;
+            background: #fff;
+            transition: border-color 0.15s;
+        }
+        .edit-field input:focus,
+        .edit-field select:focus,
+        .edit-field textarea:focus {
+            outline: none;
+            border-color: #4472C4;
+            box-shadow: 0 0 0 3px rgba(68,114,196,0.1);
+        }
+        .edit-field textarea { resize: vertical; min-height: 64px; }
+
+        .edit-etapas-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .edit-etapas-table th {
+            background: #f9fafb;
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 700;
+            color: #667085;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            border-bottom: 1px solid #e4e7ec;
+        }
+        .edit-etapas-table td {
+            padding: 7px 10px;
+            border-bottom: 1px solid #f2f4f7;
+            vertical-align: middle;
+        }
+        .edit-etapas-table tr:last-child td { border-bottom: none; }
+        .edit-etapas-table input[type="text"] {
+            width: 90px;
+            padding: 5px 8px;
+            border: 1px solid #d0d5dd;
+            border-radius: 5px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .edit-etapas-table input[type="checkbox"] {
+            width: 16px; height: 16px; cursor: pointer;
+        }
+
+        .edit-modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid #e4e7ec;
+        }
+        .btn-warning {
+            background: #F79009;
+            color: #fff;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .btn-warning:hover { background: #DC6803; }
+    `;
+    document.head.appendChild(style);
+})();
+
+// — Utilidades de formato —
+function _segundosAHHMMSS(s) {
+    const total = parseInt(s) || 0;
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = total % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function _hhmmssASegundos(str) {
+    if (!str || !str.trim()) return null;
+    const parts = str.trim().split(':').map(Number);
+    if (parts.some(isNaN)) return null;
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parseInt(str) || null;
+}
+
+// — Abrir modal con datos cargados —
+async function editarRuta(rutaId) {
+    try {
+        const res = await fetchAdmin(`${API_BASE}/rutas/${rutaId}`);
+        const ruta = await res.json();
+        _editarRutaId = rutaId;
+
+        // Fecha para el input datetime-local (YYYY-MM-DDTHH:MM)
+        const fechaISO = ruta.fecha ? ruta.fecha.slice(0, 16) : '';
+
+        const etapasRows = (ruta.etapas || []).map(etapa => `
+            <tr>
+                <td><strong>${etapa.nombre}</strong></td>
+                <td>
+                    <input
+                        type="text"
+                        class="etapa-duracion"
+                        data-nombre="${etapa.nombre}"
+                        value="${_segundosAHHMMSS(etapa.duracion_segundos)}"
+                        placeholder="HH:MM:SS"
+                        title="Formato HH:MM:SS"
+                    >
+                </td>
+                <td style="text-align:center">
+                    <input
+                        type="checkbox"
+                        class="etapa-completada"
+                        data-nombre="${etapa.nombre}"
+                        ${etapa.completada ? 'checked' : ''}
+                    >
+                </td>
+            </tr>
+        `).join('');
+
+        document.getElementById('editarRutaContenido').innerHTML = `
+            <div class="edit-section">
+                <h4>Datos generales</h4>
+                <div class="edit-grid">
+                    <div class="edit-field">
+                        <label>Estado</label>
+                        <select id="editEstado">
+                            <option value="activa"     ${ruta.estado === 'activa'      ? 'selected' : ''}>Activa</option>
+                            <option value="completada" ${ruta.estado === 'completada'  ? 'selected' : ''}>Completada</option>
+                            <option value="cancelada"  ${ruta.estado === 'cancelada'   ? 'selected' : ''}>Cancelada</option>
+                        </select>
+                    </div>
+                    <div class="edit-field">
+                        <label>Fecha y hora</label>
+                        <input type="datetime-local" id="editFecha" value="${fechaISO}">
+                    </div>
+                    <div class="edit-field full">
+                        <label>Notas</label>
+                        <textarea id="editNotas" rows="2">${ruta.notas || ''}</textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="edit-section">
+                <h4>Tiempos de etapas</h4>
+                <table class="edit-etapas-table">
+                    <thead>
+                        <tr>
+                            <th>Etapa</th>
+                            <th>Duración (HH:MM:SS)</th>
+                            <th style="text-align:center">Completada</th>
+                        </tr>
+                    </thead>
+                    <tbody>${etapasRows}</tbody>
+                </table>
+            </div>
+        `;
+
+        document.getElementById('modalEditarRuta').style.display = 'block';
+    } catch (error) {
+        console.error('Error al abrir edición de ruta:', error);
+        alert('No se pudo cargar la ruta para editar.');
+    }
+}
+
+function cerrarModalEditarRuta() {
+    document.getElementById('modalEditarRuta').style.display = 'none';
+    _editarRutaId = null;
+}
+
+async function guardarEdicionRuta() {
+    if (!_editarRutaId) return;
+
+    // — Recolectar etapas —
+    const etapas = [];
+    document.querySelectorAll('#editarRutaContenido .etapa-duracion').forEach(input => {
+        const nombre = input.dataset.nombre;
+        const segundos = _hhmmssASegundos(input.value);
+        const checkEl = document.querySelector(
+            `#editarRutaContenido .etapa-completada[data-nombre="${nombre}"]`
+        );
+        etapas.push({
+            nombre,
+            duracion_segundos: segundos,
+            completada: checkEl ? checkEl.checked : false
+        });
+    });
+
+    const payload = {
+        estado: document.getElementById('editEstado').value,
+        notas:  document.getElementById('editNotas').value.trim(),
+        fecha:  document.getElementById('editFecha').value || undefined,
+        etapas
+    };
+
+    try {
+        const res = await fetchAdmin(`${ADMIN_BASE}/rutas/${_editarRutaId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        cerrarModalEditarRuta();
+
+        // Refrescar la vista activa
+        const seccionActiva = document.querySelector('.content-section.active')?.id;
+        if (seccionActiva === 'rutas')     await cargarRutas();
+        if (seccionActiva === 'historial') await cargarHistorialAdmin();
+        if (seccionActiva === 'dashboard') await cargarDashboard();
+
+        // Toast de confirmación
+        const toast = document.createElement('div');
+        toast.textContent = `✓ Ruta actualizada correctamente`;
+        Object.assign(toast.style, {
+            position: 'fixed', bottom: '24px', right: '24px', zIndex: 9999,
+            background: '#2D9F7C', color: '#fff', padding: '12px 20px',
+            borderRadius: '8px', fontWeight: '600', fontSize: '14px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            transition: 'opacity 0.4s'
+        });
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2800);
+
+    } catch (error) {
+        console.error('Error al guardar edición:', error);
+        alert(`Error al guardar: ${error.message}`);
+    }
 }

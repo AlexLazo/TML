@@ -264,6 +264,75 @@ def descargar_excel():
     )
 
 
+@admin_bp.route('/rutas/<int:ruta_id>', methods=['PUT'])
+def editar_ruta_admin(ruta_id):
+    """Edita cabecera y etapas de una ruta. Accesible para admin y supervisor."""
+    ruta = Ruta.query.get_or_404(ruta_id)
+    data = request.get_json(silent=True) or {}
+
+    # ── Campos de cabecera ──────────────────────────────────────────
+    if 'numero_ruta' in data:
+        ruta.numero_ruta = str(data['numero_ruta']).strip().upper()
+
+    if 'estado' in data:
+        if data['estado'] not in ('activa', 'completada', 'cancelada'):
+            return jsonify({'error': 'Estado inválido. Use: activa, completada, cancelada'}), 400
+        ruta.estado = data['estado']
+
+    if 'notas' in data:
+        ruta.notas = (data['notas'] or '').strip() or None
+
+    if 'fecha' in data:
+        for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M', '%Y-%m-%d'):
+            try:
+                ruta.fecha = datetime.strptime(data['fecha'], fmt)
+                break
+            except ValueError:
+                continue
+        else:
+            return jsonify({'error': 'Formato de fecha inválido. Use YYYY-MM-DD o YYYY-MM-DDTHH:MM:SS'}), 400
+
+    if 'usuario_id' in data:
+        nuevo_usuario = Usuario.query.get(data['usuario_id'])
+        if not nuevo_usuario:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+        ruta.usuario_id = nuevo_usuario.id
+
+    # ── Etapas ──────────────────────────────────────────────────────
+    # Lista parcial: [{ "nombre": "Matinal", "duracion_segundos": 300, "completada": true }, ...]
+    # Solo se actualizan las etapas incluidas; las demás no se tocan.
+    etapas_payload = data.get('etapas')
+    if etapas_payload is not None:
+        if not isinstance(etapas_payload, list):
+            return jsonify({'error': 'El campo etapas debe ser una lista'}), 400
+
+        etapas_por_nombre = {etapa.nombre: etapa for etapa in ruta.etapas}
+
+        for item in etapas_payload:
+            nombre = (item.get('nombre') or '').strip()
+            if not nombre:
+                continue
+
+            etapa = etapas_por_nombre.get(nombre)
+            if etapa is None:
+                orden_max = max((e.orden for e in ruta.etapas), default=0)
+                etapa = Etapa(ruta_id=ruta.id, nombre=nombre, orden=orden_max + 1)
+                db.session.add(etapa)
+                etapas_por_nombre[nombre] = etapa
+
+            if 'duracion_segundos' in item:
+                valor = item['duracion_segundos']
+                if valor is not None and not isinstance(valor, (int, float)):
+                    return jsonify({'error': f'duracion_segundos inválido en etapa "{nombre}"'}), 400
+                etapa.duracion_segundos = int(valor) if valor is not None else None
+
+            if 'completada' in item:
+                etapa.completada = bool(item['completada'])
+
+    db.session.commit()
+    return jsonify({'mensaje': 'Ruta actualizada correctamente', 'ruta': _ruta_payload(ruta)})
+
+
 @admin_bp.route('/rutas/<int:ruta_id>', methods=['DELETE'])
 def eliminar_ruta_admin(ruta_id):
     """Elimina una ruta medida con sus etapas"""

@@ -12,21 +12,17 @@ admin_bp = Blueprint('admin', __name__)
 
 @admin_bp.route('/seed-junio', methods=['POST'])
 def seed_junio():
-    """Seeder para poblar la DB con rutas de junio (días hábiles)"""
+    """Seeder para poblar la DB con rutas del mes actual hasta hoy (máximo 16)"""
     autorizado = _requiere_admin()
     if autorizado:
         return autorizado
 
-    # Verificar que existan rutas fijas
     rutas_fijas = RutaFija.query.all()
     if not rutas_fijas:
         return jsonify({'error': 'No hay rutas fijas importadas. Ejecuta /importar-rutas-fijas primero.'}), 400
 
-    # Obtener usuarios operadores (o crear si no hay)
     usuarios = Usuario.query.filter(Usuario.activo == True, Usuario.rol == 'operador').all()
     if not usuarios:
-        # Crear usuarios de prueba si no existen
-        usuarios_creados = []
         nombres = ['Operador1', 'Operador2', 'Operador3', 'Operador4', 'Operador5']
         for nombre in nombres:
             email = f"{nombre.lower()}@test.com"
@@ -39,7 +35,6 @@ def seed_junio():
                     activo=True
                 )
                 db.session.add(u)
-                usuarios_creados.append(u)
         db.session.commit()
         usuarios = Usuario.query.filter(Usuario.activo == True, Usuario.rol == 'operador').all()
 
@@ -48,69 +43,61 @@ def seed_junio():
 
     # Mapeo de supervisor a hora de inicio (minutos desde medianoche)
     HORARIO_SUPERVISOR = {
-        'Kassandra': 390,        # 6:30
-        'Alexander Saña': 390,   # 6:30
-        'Elmer Figueroa': 420,   # 7:00
-        'Bryan Gáldamez': 420,   # 7:00
-        'Juan Sibrian': 450,     # 7:30
+        'Kassandra': 390,
+        'Alexander Saña': 390,
+        'Elmer Figueroa': 420,
+        'Bryan Gáldamez': 420,
+        'Juan Sibrian': 450,
     }
-    HORA_DEFAULT = 420  # 7:00
+    HORA_DEFAULT = 420
 
-    # Rangos de duración en segundos
     RANGOS = {
-        'Matinal': (900, 1020),          # 15-17 min
-        'Conteo de Carga': (720, 1200),  # 12-20 min
-        'Check de Salida': (45, 80),     # 45s-1m20s
-        'Botón de Pánico': (20, 60),     # 20s-1m
-        'Tiempo en Fila': (120, 360),    # 2-6 min
+        'Matinal': (900, 1020),
+        'Conteo de Carga': (720, 1200),
+        'Check de Salida': (45, 80),
+        'Botón de Pánico': (20, 60),
+        'Tiempo en Fila': (120, 360),
     }
 
-    # Año fijo: 2026 (puedes cambiarlo o hacerlo dinámico)
-    ANIO = 2026
-    MES = 6
+    ahora = datetime.now()
+    anio = ahora.year
+    mes = ahora.month
+    dia_hoy = ahora.day
+    dia_max = min(dia_hoy, 16)  # máximo 16
 
-    # Generar días hábiles de junio (lunes a sábado, excluir domingos)
     dias_habiles = []
-    for dia in range(1, 31):
-        fecha = datetime(ANIO, MES, dia)
-        if fecha.weekday() < 6:  # 0=lunes, 6=domingo
+    for dia in range(1, dia_max + 1):
+        fecha = datetime(anio, mes, dia)
+        if fecha.weekday() < 6:  # Lunes a sábado
             dias_habiles.append(fecha.date())
 
     if not dias_habiles:
-        return jsonify({'error': 'No hay días hábiles en junio 2026'}), 400
+        return jsonify({'error': f'No hay días hábiles en {mes}/{anio} hasta el {dia_max}'}), 400
 
-    # Para cada día hábil, generar entre 2 y 5 rutas aleatorias
     rutas_creadas = 0
     for dia in dias_habiles:
-        num_rutas_dia = random.randint(24, 35)
-        # Seleccionar rutas fijas aleatorias (pueden repetir en días distintos)
-        seleccion = random.sample(rutas_fijas, min(num_rutas_dia, len(rutas_fijas)))
+        num_rutas_dia = random.randint(25, 28)
+        seleccion = random.choices(rutas_fijas, k=num_rutas_dia)
 
         for ruta_fija in seleccion:
-            # Determinar hora de inicio según supervisor
             supervisor = ruta_fija.supervisor or ''
             minutos_inicio = HORARIO_SUPERVISOR.get(supervisor, HORA_DEFAULT)
-            # Añadir variación de ±5 minutos
             minutos_inicio += random.randint(-5, 5)
-            minutos_inicio = max(360, min(540, minutos_inicio))  # entre 6:00 y 9:00
+            minutos_inicio = max(360, min(540, minutos_inicio))
 
             hora_inicio = datetime.combine(dia, datetime.min.time()) + timedelta(minutes=minutos_inicio)
-
-            # Elegir usuario aleatorio
             usuario = random.choice(usuarios)
 
-            # Crear ruta
             ruta = Ruta(
                 usuario_id=usuario.id,
                 numero_ruta=ruta_fija.numero_ruta,
                 fecha=hora_inicio,
                 estado=random.choices(['completada', 'activa', 'cancelada'], weights=[0.8, 0.1, 0.1])[0],
-                notas=f"Seeder junio {dia.strftime('%Y-%m-%d')}"
+                notas=f"Seeder {dia.strftime('%Y-%m-%d')}"
             )
             db.session.add(ruta)
-            db.session.flush()  # para obtener ruta.id
+            db.session.flush()
 
-            # Crear etapas en orden
             orden_etapas = ['Matinal', 'Conteo de Carga', 'Check de Salida', 'Botón de Pánico', 'Tiempo en Fila']
             for idx, nombre in enumerate(orden_etapas, start=1):
                 if nombre in RANGOS:
@@ -125,7 +112,6 @@ def seed_junio():
                     orden=idx,
                     duracion_segundos=duracion,
                     completada=random.choice([True, False]) if nombre != 'Tiempo en Fila' else True,
-                    # Para simplificar, todas las etapas se marcan completadas si la ruta está completada
                 )
                 db.session.add(etapa)
 

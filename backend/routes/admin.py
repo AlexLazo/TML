@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, send_file, session
+from flask import Blueprint, app, jsonify, request, send_file, session
 from models import db, Ruta, Etapa, Usuario, RutaFija
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -6,10 +6,138 @@ from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
 import io
 import os
+import random
 
 admin_bp = Blueprint('admin', __name__)
 
+@admin_bp.route('/seed-junio', methods=['POST'])
+def seed_junio():
+    """Seeder para poblar la DB con rutas de junio (días hábiles)"""
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
 
+    # Verificar que existan rutas fijas
+    rutas_fijas = RutaFija.query.all()
+    if not rutas_fijas:
+        return jsonify({'error': 'No hay rutas fijas importadas. Ejecuta /importar-rutas-fijas primero.'}), 400
+
+    # Obtener usuarios operadores (o crear si no hay)
+    usuarios = Usuario.query.filter(Usuario.activo == True, Usuario.rol == 'operador').all()
+    if not usuarios:
+        # Crear usuarios de prueba si no existen
+        usuarios_creados = []
+        nombres = ['Operador1', 'Operador2', 'Operador3', 'Operador4', 'Operador5']
+        for nombre in nombres:
+            email = f"{nombre.lower()}@test.com"
+            if not Usuario.query.filter_by(email=email).first():
+                u = Usuario(
+                    nombre=nombre,
+                    email=email,
+                    password=generate_password_hash('123456'),
+                    rol='operador',
+                    activo=True
+                )
+                db.session.add(u)
+                usuarios_creados.append(u)
+        db.session.commit()
+        usuarios = Usuario.query.filter(Usuario.activo == True, Usuario.rol == 'operador').all()
+
+    if not usuarios:
+        return jsonify({'error': 'No hay usuarios operadores disponibles'}), 400
+
+    # Mapeo de supervisor a hora de inicio (minutos desde medianoche)
+    HORARIO_SUPERVISOR = {
+        'Kassandra': 390,        # 6:30
+        'Alexander Saña': 390,   # 6:30
+        'Elmer Figueroa': 420,   # 7:00
+        'Bryan Gáldamez': 420,   # 7:00
+        'Juan Sibrian': 450,     # 7:30
+    }
+    HORA_DEFAULT = 420  # 7:00
+
+    # Rangos de duración en segundos
+    RANGOS = {
+        'Matinal': (900, 1020),          # 15-17 min
+        'Conteo de Carga': (720, 1200),  # 12-20 min
+        'Check de Salida': (45, 80),     # 45s-1m20s
+        'Botón de Pánico': (20, 60),     # 20s-1m
+        'Tiempo en Fila': (120, 360),    # 2-6 min
+    }
+
+    # Año fijo: 2026 (puedes cambiarlo o hacerlo dinámico)
+    ANIO = 2026
+    MES = 6
+
+    # Generar días hábiles de junio (lunes a sábado, excluir domingos)
+    dias_habiles = []
+    for dia in range(1, 31):
+        fecha = datetime(ANIO, MES, dia)
+        if fecha.weekday() < 6:  # 0=lunes, 6=domingo
+            dias_habiles.append(fecha.date())
+
+    if not dias_habiles:
+        return jsonify({'error': 'No hay días hábiles en junio 2026'}), 400
+
+    # Para cada día hábil, generar entre 2 y 5 rutas aleatorias
+    rutas_creadas = 0
+    for dia in dias_habiles:
+        num_rutas_dia = random.randint(24, 35)
+        # Seleccionar rutas fijas aleatorias (pueden repetir en días distintos)
+        seleccion = random.sample(rutas_fijas, min(num_rutas_dia, len(rutas_fijas)))
+
+        for ruta_fija in seleccion:
+            # Determinar hora de inicio según supervisor
+            supervisor = ruta_fija.supervisor or ''
+            minutos_inicio = HORARIO_SUPERVISOR.get(supervisor, HORA_DEFAULT)
+            # Añadir variación de ±5 minutos
+            minutos_inicio += random.randint(-5, 5)
+            minutos_inicio = max(360, min(540, minutos_inicio))  # entre 6:00 y 9:00
+
+            hora_inicio = datetime.combine(dia, datetime.min.time()) + timedelta(minutes=minutos_inicio)
+
+            # Elegir usuario aleatorio
+            usuario = random.choice(usuarios)
+
+            # Crear ruta
+            ruta = Ruta(
+                usuario_id=usuario.id,
+                numero_ruta=ruta_fija.numero_ruta,
+                fecha=hora_inicio,
+                estado=random.choices(['completada', 'activa', 'cancelada'], weights=[0.8, 0.1, 0.1])[0],
+                notas=f"Seeder junio {dia.strftime('%Y-%m-%d')}"
+            )
+            db.session.add(ruta)
+            db.session.flush()  # para obtener ruta.id
+
+            # Crear etapas en orden
+            orden_etapas = ['Matinal', 'Conteo de Carga', 'Check de Salida', 'Botón de Pánico', 'Tiempo en Fila']
+            for idx, nombre in enumerate(orden_etapas, start=1):
+                if nombre in RANGOS:
+                    min_sec, max_sec = RANGOS[nombre]
+                    duracion = random.randint(min_sec, max_sec)
+                else:
+                    duracion = 0
+
+                etapa = Etapa(
+                    ruta_id=ruta.id,
+                    nombre=nombre,
+                    orden=idx,
+                    duracion_segundos=duracion,
+                    completada=random.choice([True, False]) if nombre != 'Tiempo en Fila' else True,
+                    # Para simplificar, todas las etapas se marcan completadas si la ruta está completada
+                )
+                db.session.add(etapa)
+
+            rutas_creadas += 1
+
+    db.session.commit()
+
+    return jsonify({
+        'mensaje': f'Seeder ejecutado correctamente. Se crearon {rutas_creadas} rutas en {len(dias_habiles)} días hábiles.',
+        'rutas_creadas': rutas_creadas,
+        'dias_habiles': len(dias_habiles)
+    })
 @admin_bp.before_request
 def requerir_admin():
     if not session.get('usuario_id'):
@@ -38,6 +166,87 @@ def _percentil(valores, percentil):
     superior = min(inferior + 1, len(ordenados) - 1)
     peso_superior = posicion - inferior
     return int(ordenados[inferior] * (1 - peso_superior) + ordenados[superior] * peso_superior)
+
+@admin_bp.route('/reiniciar-db', methods=['POST'])
+def reiniciar_db():
+    """Reinicia la base de datos: elimina rutas medidas y rutas fijas, y reimporta desde Excel si existe."""
+    autorizado = _requiere_admin()
+    if autorizado:
+        return autorizado
+
+    data = request.get_json(silent=True) or {}
+    confirmacion = data.get('confirmacion', '')
+    if confirmacion != 'REINICIAR':
+        return jsonify({'error': 'Confirmacion requerida. Escribe REINICIAR'}), 400
+
+    # Contar registros antes de eliminar
+    rutas_eliminadas = Ruta.query.count()
+    etapas_eliminadas = Etapa.query.count()
+    rutas_fijas_eliminadas = RutaFija.query.count()
+
+    # Eliminar rutas (cascada a etapas)
+    db.session.query(Etapa).delete()
+    db.session.query(Ruta).delete()
+    db.session.query(RutaFija).delete()
+    db.session.commit()
+
+    # Intentar importar rutas fijas desde el Excel
+    importadas = 0
+    actualizadas = 0
+    mensaje_importacion = "No se importaron rutas fijas porque no existe el archivo."
+
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    archivo = os.path.join(base_dir, 'Rutas fijas Mayo.xlsx')
+    if os.path.exists(archivo):
+        try:
+            wb = load_workbook(archivo, data_only=True)
+            ws = wb['Rutas Fijas MAYO'] if 'Rutas Fijas MAYO' in wb.sheetnames else wb.active
+
+            headers = {}
+            for col in range(1, ws.max_column + 1):
+                valor = ws.cell(row=1, column=col).value
+                if valor:
+                    headers[str(valor).strip().upper()] = col
+
+            requeridas = ['RUTA', 'CONTRATISTA', 'ESTATUS', 'CANAL', 'SUPERVISOR']
+            faltantes = [col for col in requeridas if col not in headers]
+            if not faltantes:
+                for row in range(2, ws.max_row + 1):
+                    numero = ws.cell(row=row, column=headers['RUTA']).value
+                    if not numero:
+                        continue
+                    numero_ruta = str(numero).strip().upper()
+                    fija = RutaFija.query.filter_by(numero_ruta=numero_ruta).first()
+                    if not fija:
+                        fija = RutaFija(numero_ruta=numero_ruta)
+                        db.session.add(fija)
+                        importadas += 1
+                    else:
+                        actualizadas += 1
+                    fija.contratista = str(ws.cell(row=row, column=headers['CONTRATISTA']).value or '').strip()
+                    fija.estatus = str(ws.cell(row=row, column=headers['ESTATUS']).value or '').strip()
+                    fija.canal = str(ws.cell(row=row, column=headers['CANAL']).value or '').strip()
+                    fija.supervisor = str(ws.cell(row=row, column=headers['SUPERVISOR']).value or '').strip()
+                    fija.origen = os.path.basename(archivo)
+                    fija.fecha_importacion = datetime.utcnow()
+                db.session.commit()
+                mensaje_importacion = f"Rutas fijas reimportadas: {importadas} nuevas, {actualizadas} actualizadas."
+            else:
+                mensaje_importacion = f"Columnas faltantes en el Excel: {', '.join(faltantes)}. No se importaron."
+        except Exception as e:
+            mensaje_importacion = f"Error al importar rutas fijas: {str(e)}"
+    else:
+        mensaje_importacion = "No se encontró el archivo 'Rutas fijas Mayo.xlsx'. Las rutas fijas se eliminaron pero no se reimportaron."
+
+    return jsonify({
+        'mensaje': 'Base de datos reiniciada correctamente.',
+        'detalles': {
+            'rutas_eliminadas': rutas_eliminadas,
+            'etapas_eliminadas': etapas_eliminadas,
+            'rutas_fijas_eliminadas': rutas_fijas_eliminadas,
+            'importacion': mensaje_importacion
+        }
+    })
 
 
 def _ruta_fija(numero_ruta):
@@ -592,8 +801,10 @@ def estadisticas_general():
             continue
         promedio = sum(tiempos) / len(tiempos)
         etapas_promedio[nombre] = {
+    'promedio_segundos': int(promedio),
+    'promedio_minutos': round(promedio / 60, 1),  # <-- añadir esto
+    'promedio_fmt': f"{int(promedio) // 60:02d}:{int(promedio) % 60:02d}",
             'promedio': int(promedio),
-            'promedio_fmt': f"{int(promedio) // 60:02d}:{int(promedio) % 60:02d}",
             'minimo': min(tiempos),
             'maximo': max(tiempos),
             'cantidad': len(tiempos)

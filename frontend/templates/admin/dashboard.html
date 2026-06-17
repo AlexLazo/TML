@@ -1,409 +1,504 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Panel de Administrador - TML</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body data-role="{{ session.get('rol') }}">
-    <div class="admin-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2>TML Admin</h2>
-                <p class="admin-user">{{ session.get('admin_nombre', 'Admin') }}</p>
-            </div>
-            <nav class="sidebar-nav">
-                <a href="#dashboard" class="nav-item active" data-section="dashboard">📊 Dashboard</a>
-                <a href="#historial" class="nav-item" data-section="historial">📚 Historial</a>
-                <a href="#rutas" class="nav-item" data-section="rutas">📋 Rutas</a>
-                <a href="#reportes" class="nav-item" data-section="reportes">📈 Reportes</a>
-                <a href="#maestro" class="nav-item" data-section="maestro">🧭 Rutas Fijas</a>
-                {% if session.get('rol') == 'admin' %}
-                <a href="#usuarios" class="nav-item" data-section="usuarios">👥 Usuarios</a>
-                <a href="#herramientas" class="nav-item" data-section="herramientas">⚙️ Herramientas</a>
-                {% endif %}
-                <a href="/" class="nav-item">↶ Volver a Móvil</a>
-                <a href="/logout" class="nav-item">Cerrar sesión</a>
-            </nav>
-        </aside>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Dashboard Section -->
-            <section id="dashboard" class="content-section active">
-                <div class="dashboard-header">
-                    <div>
-                        <span class="dashboard-kicker">Centro de Control Operativo</span>
-                        <h1>Dashboard</h1>
-                        <p class="dashboard-subtitle">Lectura ejecutiva de cumplimiento, tiempos, cuellos de botella y rutas que necesitan atencion.</p>
-                    </div>
-                    <div class="dashboard-badge">
-                        <span>Objetivo ruta</span>
-                        <strong>45 min</strong>
-                    </div>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Panel de Administrador - TML</title>
+        <link rel="stylesheet"
+            href="{{ url_for('static', filename='css/admin.css') }}">
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+    </head>
+    <body data-role="{{ session.get('rol') }}">
+        <div class="admin-container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h2>TML Admin</h2>
+                    <p class="admin-user">{{ session.get('admin_nombre',
+                        'Admin') }}</p>
                 </div>
+                <nav class="sidebar-nav">
+                    <a href="#dashboard" class="nav-item active"
+                        data-section="dashboard">📊 Dashboard</a>
+                    <a href="#historial" class="nav-item"
+                        data-section="historial">📚 Historial</a>
+                    <a href="#rutas" class="nav-item" data-section="rutas">📋
+                        Rutas</a>
+                    <a href="#reportes" class="nav-item"
+                        data-section="reportes">📈 Reportes</a>
+                    <a href="#maestro" class="nav-item"
+                        data-section="maestro">🧭 Rutas Fijas</a>
+                    {% if session.get('rol') == 'admin' %}
+                    <a href="#usuarios" class="nav-item"
+                        data-section="usuarios">👥 Usuarios</a>
+                    <a href="#herramientas" class="nav-item"
+                        data-section="herramientas">⚙️ Herramientas</a>
+                    {% endif %}
+                    <a href="/" class="nav-item">↶ Volver a Móvil</a>
+                    <a href="/logout" class="nav-item">Cerrar sesión</a>
+                </nav>
+            </aside>
 
-                <div class="filter-section">
-                    <select id="dashboardFiltroPeriodo" class="filter-input">
-                        <option value="7">Últimos 7 días</option>
-                        <option value="15">Últimos 15 días</option>
-                        <option value="30" selected>Últimos 30 días</option>
-                        <option value="90">Últimos 90 días</option>
-                    </select>
-                    <select id="dashboardFiltroEstado" class="filter-input">
-                        <option value="">Todos los estados</option>
-                        <option value="activa">Activa</option>
-                        <option value="completada">Completada</option>
-                        <option value="cancelada">Cancelada</option>
-                    </select>
-                    <select id="dashboardFiltroSupervisor" class="filter-input">
-                        <option value="">Todos los supervisores</option>
-                    </select>
-                    <select id="dashboardFiltroContratista" class="filter-input">
-                        <option value="">Todos los contratistas</option>
-                    </select>
-                    <button id="btnDashboardRefrescar" class="btn btn-primary">Actualizar</button>
-                </div>
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Dashboard Section -->
+                <section id="dashboard" class="content-section active">
+                    <div class="dashboard-header">
+                        <div>
+                            <span class="dashboard-kicker">Centro de Control
+                                Operativo</span>
+                            <h1>Dashboard</h1>
+                            <p class="dashboard-subtitle">Lectura ejecutiva de
+                                cumplimiento, tiempos, cuellos de botella y
+                                rutas que necesitan atencion.</p>
+                        </div>
+                        <div class="dashboard-badge">
+                            <span>Objetivo ruta</span>
+                            <strong>45 min</strong>
+                        </div>
+                    </div>
 
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3>Rutas Totales</h3>
-                        <p id="statRutasTotales" class="stat-value">0</p>
+                    <div class="filter-section">
+                        <select id="dashboardFiltroPeriodo"
+                            class="filter-input">
+                            <option value="7">Últimos 7 días</option>
+                            <option value="15">Últimos 15 días</option>
+                            <option value="30" selected>Últimos 30 días</option>
+                            <option value="90">Últimos 90 días</option>
+                        </select>
+                        <select id="dashboardFiltroEstado" class="filter-input">
+                            <option value>Todos los estados</option>
+                            <option value="activa">Activa</option>
+                            <option value="completada">Completada</option>
+                            <option value="cancelada">Cancelada</option>
+                        </select>
+                        <select id="dashboardFiltroSupervisor"
+                            class="filter-input">
+                            <option value>Todos los supervisores</option>
+                        </select>
+                        <select id="dashboardFiltroContratista"
+                            class="filter-input">
+                            <option value>Todos los contratistas</option>
+                        </select>
+                        <button id="btnDashboardRefrescar"
+                            class="btn btn-primary">Actualizar</button>
                     </div>
-                    <div class="stat-card">
-                        <h3>Completadas</h3>
-                        <p id="statRutasCompletadas" class="stat-value">0</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Tasa Completación</h3>
-                        <p id="statTasaCompletacion" class="stat-value">0%</p>
-                    </div>
-                    <div class="stat-card kpi-card gold">
-                        <h3>Cumplimiento Objetivo</h3>
-                        <p id="statCumplimientoObjetivo" class="stat-value">0%</p>
-                    </div>
-                    <div class="stat-card kpi-card">
-                        <h3>P90 Ruta</h3>
-                        <p id="statP90Ruta" class="stat-value stat-time">00:00:00</p>
-                    </div>
-                    <div class="stat-card kpi-card">
-                        <h3>P90 Fila</h3>
-                        <p id="statP90Fila" class="stat-value stat-time">00:00:00</p>
-                    </div>
-                    <div class="stat-card kpi-card">
-                        <h3>Cobertura Fila</h3>
-                        <p id="statCoberturaFila" class="stat-value">0%</p>
-                    </div>
-                    <div class="stat-card kpi-card danger">
-                        <h3>Canceladas</h3>
-                        <p id="statRutasCanceladas" class="stat-value">0</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Usuarios Activos</h3>
-                        <p id="statUsuariosActivos" class="stat-value">0</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Tiempo Promedio Ruta</h3>
-                        <p id="statTiempoPromedio" class="stat-value stat-time">00:00:00</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Tiempo en Fila</h3>
-                        <p id="statTiempoColaPromedio" class="stat-value stat-time">00:00:00</p>
-                    </div>
-                    <div class="stat-card">
-                        <h3>Cuello de Botella</h3>
-                        <p id="statCuelloBotella" class="stat-value stat-text">-</p>
-                    </div>
-                </div>
 
-                <div class="charts-grid">
-                    <div class="chart-box chart-wide">
-                        <h3>Tendencia Operativa y Cumplimiento</h3>
-                        <canvas id="chartTendenciaCumplimiento"></canvas>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>Rutas Totales</h3>
+                            <p id="statRutasTotales" class="stat-value">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Completadas</h3>
+                            <p id="statRutasCompletadas"
+                                class="stat-value">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Tasa Completación</h3>
+                            <p id="statTasaCompletacion"
+                                class="stat-value">0%</p>
+                        </div>
+                        <div class="stat-card kpi-card gold">
+                            <h3>Cumplimiento Objetivo</h3>
+                            <p id="statCumplimientoObjetivo"
+                                class="stat-value">0%</p>
+                        </div>
+                        <div class="stat-card kpi-card">
+                            <h3>P90 Ruta</h3>
+                            <p id="statP90Ruta"
+                                class="stat-value stat-time">00:00:00</p>
+                        </div>
+                        <div class="stat-card kpi-card">
+                            <h3>P90 Fila</h3>
+                            <p id="statP90Fila"
+                                class="stat-value stat-time">00:00:00</p>
+                        </div>
+                        <div class="stat-card kpi-card">
+                            <h3>Cobertura Fila</h3>
+                            <p id="statCoberturaFila" class="stat-value">0%</p>
+                        </div>
+                        <div class="stat-card kpi-card danger">
+                            <h3>Canceladas</h3>
+                            <p id="statRutasCanceladas" class="stat-value">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Usuarios Activos</h3>
+                            <p id="statUsuariosActivos" class="stat-value">0</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Tiempo Promedio Ruta</h3>
+                            <p id="statTiempoPromedio"
+                                class="stat-value stat-time">00:00:00</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Tiempo en Fila</h3>
+                            <p id="statTiempoColaPromedio"
+                                class="stat-value stat-time">00:00:00</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Cuello de Botella</h3>
+                            <p id="statCuelloBotella"
+                                class="stat-value stat-text">-</p>
+                        </div>
                     </div>
-                    <div class="chart-box">
-                        <h3>Cumplimiento del Objetivo</h3>
-                        <canvas id="chartSlaCumplimiento"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Promedios por Etapa (minutos)</h3>
-                        <canvas id="chartPromedios"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Etapas Criticas: Promedio vs Maximo</h3>
-                        <canvas id="chartEtapasCriticas"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Rutas por Día (últimos 7 días)</h3>
-                        <canvas id="chartRutasDiarias"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Estado de Rutas</h3>
-                        <canvas id="chartEstados"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Actividad por Hora</h3>
-                        <canvas id="chartHoras"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Distribucion de Tiempo Total</h3>
-                        <canvas id="chartDistribucionTotal"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Rutas por Canal</h3>
-                        <canvas id="chartCanales"></canvas>
-                    </div>
-                    <div class="chart-box chart-wide">
-                        <h3>Top Rutas Mas Lentas</h3>
-                        <canvas id="chartTopRutasLentas"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Tiempo en Fila por Supervisor</h3>
-                        <canvas id="chartColaSupervisores"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Etapas por Supervisor</h3>
-                        <canvas id="chartEtapasSupervisor"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Cumplimiento por Supervisor</h3>
-                        <canvas id="chartCumplimientoSupervisores"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Rutas por Supervisor</h3>
-                        <canvas id="chartSupervisores"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Rutas por Contratista</h3>
-                        <canvas id="chartContratistas"></canvas>
-                    </div>
-                    <div class="chart-box">
-                        <h3>Disponibilidad de Tiempo en Fila</h3>
-                        <canvas id="chartTiempoCola"></canvas>
-                    </div>
-                </div>
 
-                <div class="insights-grid">
-                    <div class="insight-panel">
-                        <h3>Lecturas Clave</h3>
-                        <div id="listaInsights" class="insight-list"></div>
+                    <div class="charts-grid">
+                        <div class="chart-box chart-wide">
+                            <h3>Tendencia Operativa y Cumplimiento</h3>
+                            <canvas id="chartTendenciaCumplimiento"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Cumplimiento del Objetivo</h3>
+                            <canvas id="chartSlaCumplimiento"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Promedios por Etapa (minutos)</h3>
+                            <canvas id="chartPromedios"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Etapas Criticas: Promedio vs Maximo</h3>
+                            <canvas id="chartEtapasCriticas"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Rutas por Día (últimos 7 días)</h3>
+                            <canvas id="chartRutasDiarias"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Estado de Rutas</h3>
+                            <canvas id="chartEstados"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Actividad por Hora</h3>
+                            <canvas id="chartHoras"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Distribucion de Tiempo Total</h3>
+                            <canvas id="chartDistribucionTotal"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Rutas por Canal</h3>
+                            <canvas id="chartCanales"></canvas>
+                        </div>
+                        <div class="chart-box chart-wide">
+                            <h3>Top Rutas Mas Lentas</h3>
+                            <canvas id="chartTopRutasLentas"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Tiempo en Fila por Supervisor</h3>
+                            <canvas id="chartColaSupervisores"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Etapas por Supervisor</h3>
+                            <canvas id="chartEtapasSupervisor"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Cumplimiento por Supervisor</h3>
+                            <canvas id="chartCumplimientoSupervisores"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Rutas por Supervisor</h3>
+                            <canvas id="chartSupervisores"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Rutas por Contratista</h3>
+                            <canvas id="chartContratistas"></canvas>
+                        </div>
+                        <div class="chart-box">
+                            <h3>Disponibilidad de Tiempo en Fila</h3>
+                            <canvas id="chartTiempoCola"></canvas>
+                        </div>
                     </div>
-                    <div class="insight-panel">
-                        <h3>Rutas que Requieren Atención</h3>
-                        <div id="listaRutasAtencion" class="attention-list"></div>
+
+                    <div class="insights-grid">
+                        <div class="insight-panel">
+                            <h3>Lecturas Clave</h3>
+                            <div id="listaInsights" class="insight-list"></div>
+                        </div>
+                        <div class="insight-panel">
+                            <h3>Rutas que Requieren Atención</h3>
+                            <div id="listaRutasAtencion"
+                                class="attention-list"></div>
+                        </div>
                     </div>
-                </div>
-            </section>
+                </section>
 
-            <!-- Rutas Section -->
-            <section id="rutas" class="content-section">
-                <h1>Gestión de Rutas</h1>
-                
-                <div class="filter-section">
-                    <input type="text" id="filtroRutasUsuario" placeholder="Filtrar por usuario..." class="filter-input">
-                    <select id="filtroRutasEstado" class="filter-input">
-                        <option value="">Todos los estados</option>
-                        <option value="activa">Activa</option>
-                        <option value="completada">Completada</option>
-                        <option value="cancelada">Cancelada</option>
-                    </select>
-                    <select id="filtroRutasSupervisor" class="filter-input">
-                        <option value="">Todos los supervisores</option>
-                    </select>
-                    <select id="filtroRutasContratista" class="filter-input">
-                        <option value="">Todos los contratistas</option>
-                    </select>
-                    <input type="date" id="filtroRutasFecha" class="filter-input">
-                    <button id="btnDescargarExcel" class="btn btn-success">📥 Descargar Excel</button>
-                </div>
+                <!-- Rutas Section -->
+                <section id="rutas" class="content-section">
+                    <h1>Gestión de Rutas</h1>
 
-                <div class="table-container">
-                    <table id="tablasRutas" class="data-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Ruta</th>
-                                <th>Supervisor</th>
-                                <th>Contratista</th>
-                                <th>Usuario</th>
-                                <th>Fecha</th>
-                                <th>Estado</th>
-                                <th>Matinal</th>
-                                <th>Conteo</th>
-                                <th>Check Salida</th>
-                                <th>Pánico</th>
-                                <th>Tiempo en Fila</th>
-                                <th>Total</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bodyTablaRutas">
-                            <tr>
-                                <td colspan="14" class="loading">Cargando rutas...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                    <div class="filter-section">
+                        <input type="text" id="filtroRutasUsuario"
+                            placeholder="Filtrar por usuario..."
+                            class="filter-input">
+                        <select id="filtroRutasEstado" class="filter-input">
+                            <option value>Todos los estados</option>
+                            <option value="activa">Activa</option>
+                            <option value="completada">Completada</option>
+                            <option value="cancelada">Cancelada</option>
+                        </select>
+                        <select id="filtroRutasSupervisor" class="filter-input">
+                            <option value>Todos los supervisores</option>
+                        </select>
+                        <select id="filtroRutasContratista"
+                            class="filter-input">
+                            <option value>Todos los contratistas</option>
+                        </select>
+                        <input type="date" id="filtroRutasFecha"
+                            class="filter-input">
+                        <button id="btnDescargarExcel"
+                            class="btn btn-success">📥 Descargar Excel</button>
+                    </div>
 
-            <!-- Historial Section -->
-            <section id="historial" class="content-section">
-                <h1>Historial Administrativo</h1>
-                <div class="filter-section">
-                    <select id="filtroHistorialEstado" class="filter-input">
-                        <option value="">Todos los estados</option>
-                        <option value="activa">Activa</option>
-                        <option value="completada">Completada</option>
-                        <option value="cancelada">Cancelada</option>
-                    </select>
-                    <select id="filtroHistorialSupervisor" class="filter-input">
-                        <option value="">Todos los supervisores</option>
-                    </select>
-                    <input type="date" id="filtroHistorialFecha" class="filter-input">
-                </div>
-                <div id="historialAdminLista" class="history-grid"></div>
-            </section>
-
-            <!-- Reportes Section -->
-            <section id="reportes" class="content-section">
-                <h1>Reportes y Análisis</h1>
-                
-                <div class="report-box">
-                    <h3>Rendimiento por Etapa</h3>
                     <div class="table-container">
-                        <table id="tablaReportes" class="data-table">
+                        <table id="tablasRutas" class="data-table">
                             <thead>
                                 <tr>
-                                    <th>Etapa</th>
-                                    <th>Promedio</th>
-                                    <th>Mínimo</th>
-                                    <th>Máximo</th>
-                                    <th>Registros</th>
+                                    <th>ID</th>
+                                    <th>Ruta</th>
+                                    <th>Supervisor</th>
+                                    <th>Contratista</th>
+                                    <th>Usuario</th>
+                                    <th>Fecha</th>
+                                    <th>Estado</th>
+                                    <th>Matinal</th>
+                                    <th>Conteo</th>
+                                    <th>Check Salida</th>
+                                    <th>Pánico</th>
+                                    <th>Tiempo en Fila</th>
+                                    <th>Total</th>
+                                    <th>Acciones</th>
                                 </tr>
                             </thead>
-                            <tbody id="bodyTablaReportes">
+                            <tbody id="bodyTablaRutas">
                                 <tr>
-                                    <td colspan="5" class="loading">Cargando reportes...</td>
+                                    <td colspan="14" class="loading">Cargando
+                                        rutas...</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </section>
 
-                <div class="chart-box" style="margin-top: 30px;">
-                    <h3>Comparativa de Tiempos por Etapa</h3>
-                    <canvas id="chartComparativa"></canvas>
-                </div>
-            </section>
+                <!-- Historial Section -->
+                <section id="historial" class="content-section">
+                    <h1>Historial Administrativo</h1>
+                    <div class="filter-section">
+                        <select id="filtroHistorialEstado" class="filter-input">
+                            <option value>Todos los estados</option>
+                            <option value="activa">Activa</option>
+                            <option value="completada">Completada</option>
+                            <option value="cancelada">Cancelada</option>
+                        </select>
+                        <select id="filtroHistorialSupervisor"
+                            class="filter-input">
+                            <option value>Todos los supervisores</option>
+                        </select>
+                        <input type="date" id="filtroHistorialFecha"
+                            class="filter-input">
+                    </div>
+                    <div id="historialAdminLista" class="history-grid"></div>
+                </section>
 
-            <!-- Maestro Section -->
-            <section id="maestro" class="content-section">
-                <h1>Base de Rutas Fijas</h1>
-                <div class="filter-section">
-                    {% if session.get('rol') == 'admin' %}
-                    <button id="btnImportarRutasFijas" class="btn btn-primary">Importar Rutas fijas Mayo.xlsx</button>
-                    <span id="estadoImportacion" class="inline-status"></span>
-                    {% else %}
-                    <span class="inline-status">Solo administradores pueden importar rutas fijas.</span>
-                    {% endif %}
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Ruta</th>
-                                <th>Supervisor</th>
-                                <th>Contratista</th>
-                                <th>Canal</th>
-                                <th>Estatus</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bodyTablaRutasFijas">
-                            <tr><td colspan="5" class="loading">Cargando base...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                <!-- Reportes Section -->
+                <section id="reportes" class="content-section">
+                    <h1>Reportes y Análisis</h1>
 
-            <!-- Usuarios Section -->
-            <section id="usuarios" class="content-section">
-                <h1>Usuarios y Roles</h1>
-                <div class="user-form">
-                    <input type="hidden" id="usuarioId">
-                    <input type="text" id="usuarioNombre" class="filter-input" placeholder="Nombre">
-                    <input type="email" id="usuarioEmail" class="filter-input" placeholder="Correo">
-                    <input type="password" id="usuarioPassword" class="filter-input" placeholder="Contraseña">
-                    <select id="usuarioRol" class="filter-input">
-                        <option value="operador">Operador</option>
-                        <option value="supervisor">Supervisor</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                    <label class="check-inline">
-                        <input type="checkbox" id="usuarioActivo" checked>
-                        Activo
-                    </label>
-                    <button id="btnGuardarUsuario" class="btn btn-primary">Guardar usuario</button>
-                    <button id="btnCancelarUsuario" class="btn btn-secondary">Limpiar</button>
-                </div>
-                <div class="table-container">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Nombre</th>
-                                <th>Email</th>
-                                <th>Rol</th>
-                                <th>Estado</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bodyTablaUsuarios">
-                            <tr><td colspan="5" class="loading">Cargando usuarios...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+                    <div class="report-box">
+                        <h3>Rendimiento por Etapa</h3>
+                        <div class="table-container">
+                            <table id="tablaReportes" class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Etapa</th>
+                                        <th>Promedio</th>
+                                        <th>Mínimo</th>
+                                        <th>Máximo</th>
+                                        <th>Registros</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyTablaReportes">
+                                    <tr>
+                                        <td colspan="5" class="loading">Cargando
+                                            reportes...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
 
-            <!-- Herramientas Section -->
-            <section id="herramientas" class="content-section">
-                <h1>Herramientas Administrativas</h1>
-                <div class="danger-zone">
-                    <h3>Limpieza de datos</h3>
-                    <p>Elimina todas las rutas medidas y sus etapas. No borra usuarios admin ni la base de rutas fijas.</p>
-                    <button id="btnLimpiarDatos" class="btn btn-danger">Borrar datos de rutas</button>
-                </div>
-            </section>
-        </main>
-    </div>
+                    <div class="chart-box" style="margin-top: 30px;">
+                        <h3>Comparativa de Tiempos por Etapa</h3>
+                        <canvas id="chartComparativa"></canvas>
+                    </div>
+                </section>
 
-    <!-- Modal para detalles de ruta -->
-    <div id="modalDetallesRuta" class="modal">
-        <div class="modal-content modal-large">
-            <span class="close">&times;</span>
-            <h2>Detalles de Ruta</h2>
-            <div id="detallesRutaContenido"></div>
-            <button class="btn btn-secondary" onclick="cerrarModalDetalles()">Cerrar</button>
+                <!-- Maestro Section -->
+                <section id="maestro" class="content-section">
+                    <h1>Base de Rutas Fijas</h1>
+                    <div class="filter-section">
+                        {% if session.get('rol') == 'admin' %}
+                        <button id="btnImportarRutasFijas"
+                            class="btn btn-primary">Importar Rutas fijas
+                            Mayo.xlsx</button>
+                        <span id="estadoImportacion"
+                            class="inline-status"></span>
+                        {% else %}
+                        <span class="inline-status">Solo administradores pueden
+                            importar rutas fijas.</span>
+                        {% endif %}
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Ruta</th>
+                                    <th>Supervisor</th>
+                                    <th>Contratista</th>
+                                    <th>Canal</th>
+                                    <th>Estatus</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bodyTablaRutasFijas">
+                                <tr><td colspan="5" class="loading">Cargando
+                                        base...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Usuarios Section -->
+                <section id="usuarios" class="content-section">
+                    <h1>Usuarios y Roles</h1>
+                    <div class="user-form">
+                        <input type="hidden" id="usuarioId">
+                        <input type="text" id="usuarioNombre"
+                            class="filter-input" placeholder="Nombre">
+                        <input type="email" id="usuarioEmail"
+                            class="filter-input" placeholder="Correo">
+                        <input type="password" id="usuarioPassword"
+                            class="filter-input" placeholder="Contraseña">
+                        <select id="usuarioRol" class="filter-input">
+                            <option value="operador">Operador</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <label class="check-inline">
+                            <input type="checkbox" id="usuarioActivo" checked>
+                            Activo
+                        </label>
+                        <button id="btnGuardarUsuario"
+                            class="btn btn-primary">Guardar usuario</button>
+                        <button id="btnCancelarUsuario"
+                            class="btn btn-secondary">Limpiar</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>Email</th>
+                                    <th>Rol</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bodyTablaUsuarios">
+                                <tr><td colspan="5" class="loading">Cargando
+                                        usuarios...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section id="herramientas" class="content-section">
+                    <h1>Herramientas Administrativas</h1>
+
+                    <!-- Base de rutas fijas -->
+                    <div class="danger-zone"
+                        style="border-left-color: #007bff;">
+                        <h3>📥 Base de rutas fijas</h3>
+                        <p>Importa desde el archivo "Rutas fijas Mayo.xlsx" la
+                            información de supervisores, contratistas y
+                            canales.</p>
+                        <button id="btnImportarFijas"
+                            class="btn btn-primary">Importar rutas
+                            fijas</button>
+                        <span id="importStatus" class="status-msg"></span>
+                    </div>
+
+                    <!-- Generar datos de prueba (Junio) -->
+                    <div class="danger-zone"
+                        style="border-left-color: #28a745;">
+                        <h3>🌱 Generar datos de prueba (Junio)</h3>
+                        <p>Crea rutas simuladas para el mes de junio (días
+                            hábiles) con tiempos realistas según supervisor y
+                            etapa.</p>
+                        <button id="btnSeedJunio" class="btn btn-success">Sedear
+                            datos de junio</button>
+                        <span id="seedStatus" class="status-msg"></span>
+                    </div>
+                    <!-- Reiniciar DB -->
+                    <div class="danger-zone"
+                        style="border-left-color: #dc3545;">
+                        <h3>🔄 Reiniciar base de datos</h3>
+                        <p>Elimina TODAS las rutas medidas, sus etapas y las
+                            rutas fijas, y luego reimporta las rutas fijas desde
+                            el Excel (si existe). ¡Esta acción es
+                            irreversible!</p>
+                        <button id="btnReiniciarDB"
+                            class="btn btn-danger">Reiniciar DB</button>
+                        <span id="reiniciarStatus" class="status-msg"></span>
+                    </div>
+
+                    <!-- Limpieza de datos (ya existente) -->
+                    <div class="danger-zone">
+                        <h3>🗑️ Limpieza de datos</h3>
+                        <p>Elimina todas las rutas medidas y sus etapas. No
+                            borra usuarios admin ni la base de rutas fijas.</p>
+                        <button id="btnLimpiarDatos"
+                            class="btn btn-danger">Borrar datos de
+                            rutas</button>
+                        <span id="cleanStatus" class="status-msg"></span>
+                    </div>
+                </section>
+            </main>
         </div>
-    </div>
 
-    <!-- Modal para ampliar gráficos -->
-    <div id="modalGraficoAmpliado" class="modal chart-modal">
-        <div class="modal-content chart-modal-content">
-            <div class="chart-modal-header">
-                <div>
-                    <h2 id="tituloGraficoAmpliado">Gráfico</h2>
-                    <p id="subtituloGraficoAmpliado" class="chart-modal-subtitle">Comparativa detallada para análisis y auditoría.</p>
-                </div>
-                <button type="button" id="btnCerrarGraficoAmpliado" class="chart-modal-close" aria-label="Cerrar gráfico ampliado">&times;</button>
-            </div>
-            <div id="contenedorGraficoAmpliado" class="chart-modal-body">
-                <div id="chartModalMain" class="chart-modal-main"></div>
+        <!-- Modal para detalles de ruta -->
+        <div id="modalDetallesRuta" class="modal">
+            <div class="modal-content modal-large">
+                <span class="close">&times;</span>
+                <h2>Detalles de Ruta</h2>
+                <div id="detallesRutaContenido"></div>
+                <button class="btn btn-secondary"
+                    onclick="cerrarModalDetalles()">Cerrar</button>
             </div>
         </div>
-    </div>
 
-    <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
-</body>
+        <div id="modalGraficoAmpliado" class="modal chart-modal">
+            <div class="modal-content chart-modal-content">
+                <div class="chart-modal-header">
+                    <div>
+                        <h2 id="tituloGraficoAmpliado">Gráfico</h2>
+                        <p id="subtituloGraficoAmpliado"
+                            class="chart-modal-subtitle">Comparativa detallada
+                            para análisis y auditoría.</p>
+                    </div>
+                    <button type="button" id="btnCerrarGraficoAmpliado"
+                        class="chart-modal-close"
+                        aria-label="Cerrar gráfico ampliado">&times;</button>
+                </div>
+                <div id="contenedorGraficoAmpliado" class="chart-modal-body">
+                    <div id="chartModalMain" class="chart-modal-main"></div>
+                </div>
+            </div>
+        </div>
+
+        <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+    </body>
 </html>

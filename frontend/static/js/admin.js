@@ -95,6 +95,11 @@ navItems.forEach(item => {
     });
 });
 
+// Registrar el plugin de datalabels para que funcione en todos los gráficos
+if (typeof Chart !== 'undefined' && typeof Chart.register === 'function') {
+    Chart.register(ChartDataLabels);
+}
+
 btnDescargarExcel.addEventListener('click', descargarExcel);
 closeBtn.addEventListener('click', cerrarModalDetalles);
 window.addEventListener('click', (e) => {
@@ -130,19 +135,11 @@ btnCancelarUsuario?.addEventListener('click', limpiarFormularioUsuario);
 // ==================== FUNCIONES DE NAVEGACIÓN ====================
 
 function mostrarSeccion(seccion) {
-    // Ocultar todas las secciones
     contentSections.forEach(s => s.classList.remove('active'));
-    
-    // Desactivar todos los items de navegación
     navItems.forEach(item => item.classList.remove('active'));
-    
-    // Mostrar sección seleccionada
     document.getElementById(seccion).classList.add('active');
-    
-    // Activar item de navegación
     document.querySelector(`[data-section="${seccion}"]`).classList.add('active');
-    
-    // Cargar datos específicos
+
     if (seccion === 'dashboard') {
         cargarDashboard();
     } else if (seccion === 'rutas') {
@@ -164,87 +161,6 @@ function mostrarSeccion(seccion) {
 
 const chartPalette = ['#118DFF', '#12239E', '#E66C37', '#6B007B', '#E1C233', '#2D9F7C', '#D64550', '#6F7A8A'];
 
-if (window.Chart) {
-    Chart.defaults.font.family = "'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif";
-    Chart.defaults.color = '#344054';
-    Chart.defaults.plugins.legend.labels.usePointStyle = true;
-    Chart.defaults.plugins.legend.labels.boxWidth = 8;
-
-    Chart.register({
-        id: 'dashboardDataLabelPlugin',
-        afterDatasetsDraw(chart) {
-            try {
-                if (!chart.data?.datasets || !chart.ctx) return;
-
-                const defaultConfig = {
-                    display: true,
-                    color: '#1f2937',
-                    anchor: 'end',
-                    align: 'end',
-                    offset: 6,
-                    font: { size: 12, weight: 700, family: 'Segoe UI, sans-serif' },
-                    formatter: (value) => `${value}`
-                };
-                const dataLabelConfig = { ...defaultConfig, ...(chart.options.plugins?.dataLabels || {}) };
-                if (!dataLabelConfig.display) return;
-
-                const ctx = chart.ctx;
-                ctx.save();
-                ctx.font = `${dataLabelConfig.font.weight} ${dataLabelConfig.font.size}px ${dataLabelConfig.font.family}`;
-                ctx.fillStyle = dataLabelConfig.color;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-
-                chart.data.datasets.forEach((dataset, datasetIndex) => {
-                    const meta = chart.getDatasetMeta(datasetIndex);
-                    if (!meta?.data) return;
-
-                    meta.data.forEach((element, index) => {
-                        let value = dataset.data[index];
-                        if (value === null || value === undefined) return;
-
-                        if (typeof value === 'object') {
-                            if (value === null) {
-                                return;
-                            }
-                            if ('y' in value) {
-                                value = value.y;
-                            } else if ('x' in value) {
-                                value = value.x;
-                            } else {
-                                value = JSON.stringify(value);
-                            }
-                        }
-
-                        let label = dataLabelConfig.formatter(value, dataset, index);
-                        if (label === null || label === undefined) return;
-                        if (typeof label !== 'string') {
-                            label = String(label);
-                        }
-
-                        const position = element.tooltipPosition?.();
-                        if (!position) return;
-
-                        let x = position.x;
-                        let y = position.y - 8;
-                        if (chart.config.type === 'bar' || dataset.type === 'bar') {
-                            y = position.y - 6;
-                        }
-                        if (chart.config.type === 'line' || dataset.type === 'line') {
-                            y = position.y - 10;
-                        }
-                        ctx.fillText(label, x, y);
-                    });
-                });
-
-                ctx.restore();
-            } catch (error) {
-                console.warn('dashboardDataLabelPlugin error:', error);
-            }
-        }
-    });
-}
-
 function minutosDesdeSegundos(segundos) {
     return Number(((segundos || 0) / 60).toFixed(1));
 }
@@ -264,14 +180,22 @@ function opcionesBase(extra = {}) {
         maintainAspectRatio: false,
         plugins: {
             legend: { position: 'bottom' },
-            dataLabels: {
+            datalabels: {
                 display: true,
                 color: '#1f2937',
                 anchor: 'end',
                 align: 'end',
                 offset: 6,
                 font: { size: 12, weight: 700, family: 'Segoe UI, sans-serif' },
-                formatter: (value) => `${value}`
+                formatter: (value) => {
+                    if (value === null || value === undefined) return '';
+                    if (typeof value === 'object') {
+                        if ('y' in value) return `${value.y}`;
+                        if ('x' in value) return `${value.x}`;
+                        return '';
+                    }
+                    return `${value}`;
+                }
             }
         },
         scales: {
@@ -345,13 +269,10 @@ async function cargarDashboard() {
         if (statCoberturaFila) statCoberturaFila.textContent = `${stats.cobertura_tiempo_fila_pct || 0}%`;
         if (statRutasCanceladas) statRutasCanceladas.textContent = stats.rutas_canceladas || 0;
 
-        // Gráfico de promedios
+        // Gráficos
         dibujarGraficoPromedios(stats.etapas_promedio);
-        
-        // Gráfico de rutas diarias
         dibujarGraficoRutasDiarias(avanzado.tendencia_diaria || {});
         dibujarGraficoTendenciaCumplimiento(avanzado.tendencia_diaria || {});
-
         dibujarGraficoEstados(stats.estados || {});
         dibujarGraficoHoras(avanzado.por_hora || {});
         dibujarGraficoSlaCumplimiento(stats);
@@ -426,7 +347,6 @@ function obtenerInstanciaChart(canvas) {
     }
     return null;
 }
-
 function abrirGraficoAmpliado(canvas, titulo) {
     if (!modalGraficoAmpliado || !chartModalMain || !canvas) return;
     if (graficoAmpliado && graficoAmpliado.modalChart) cerrarGraficoAmpliado();
@@ -434,16 +354,17 @@ function abrirGraficoAmpliado(canvas, titulo) {
     const originalChart = obtenerInstanciaChart(canvas);
     if (!originalChart) return;
 
+    // Clonar datos y opciones
     const data = window.structuredClone ? structuredClone(originalChart.config.data) : JSON.parse(JSON.stringify(originalChart.config.data));
     const options = {
         ...originalChart.config.options,
         responsive: true,
-        maintainAspectRatio: false,
+        maintainAspectRatio: false,   // <-- CLAVE para que ocupe todo
         animation: false
     };
 
     tituloGraficoAmpliado.textContent = titulo || 'Gráfico';
-    subtituloGraficoAmpliado.textContent = `Análisis ampliado para auditoría y presentación ejecutiva.`;
+    subtituloGraficoAmpliado.textContent = 'Análisis ampliado para auditoría y presentación ejecutiva.';
     chartModalMain.innerHTML = '';
 
     modalGraficoAmpliado.style.display = 'flex';
@@ -467,11 +388,13 @@ function abrirGraficoAmpliado(canvas, titulo) {
         modalChart
     };
 
+    // Forzar redimension después de renderizar
     requestAnimationFrame(() => {
-        requestAnimationFrame(() => modalChart.resize());
+        requestAnimationFrame(() => {
+            modalChart.resize();
+        });
     });
 }
-
 function cerrarGraficoAmpliado() {
     if (!graficoAmpliado?.modalChart) return;
 
@@ -484,9 +407,10 @@ function cerrarGraficoAmpliado() {
     graficoAmpliado = null;
 }
 
+// ----- GRÁFICOS CON DATALABELS INCORPORADOS -----
+
 function dibujarGraficoPromedios(etapas) {
     const ctx = document.getElementById('chartPromedios');
-    
     if (chartPromedios) chartPromedios.destroy();
 
     const labels = Object.keys(etapas);
@@ -499,34 +423,78 @@ function dibujarGraficoPromedios(etapas) {
             datasets: [{
                 label: 'Promedio (minutos)',
                 data: datos,
-                backgroundColor: [
-                    '#4472C4',
-                    '#ED7D31',
-                    '#A5A5A5',
-                    '#FFC000',
-                    '#5B9BD5'
-                ]
+                backgroundColor: ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5'],
+                borderColor: ['#2E5A8A', '#C55A11', '#6E6E6E', '#B38600', '#2E75B5'],
+                borderWidth: 1
             }]
         },
-        options: opcionesBase({
+        options: {
+            responsive: true,
             plugins: {
-                legend: { display: true },
-                dataLabels: {
-                    formatter: value => `${value} min`
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.parsed.y.toFixed(1)} minutos`;
+                        },
+                        afterBody: function(context) {
+                            const segundos = context[0].parsed.y * 60;
+                            const horas = Math.floor(segundos / 3600);
+                            const minutos = Math.floor((segundos % 3600) / 60);
+                            const segs = Math.round(segundos % 60);
+                            return `Equivale a ${horas}:${minutos.toString().padStart(2,'0')}:${segs.toString().padStart(2,'0')}`;
+                        }
+                    }
+                },
+                annotation: {
+                    annotations: {
+                        goalLine: {
+                            type: 'line',
+                            yMin: 45,
+                            yMax: 45,
+                            borderColor: 'rgba(255, 0, 0, 0.7)',
+                            borderWidth: 2,
+                            borderDash: [6, 4],
+                            label: {
+                                content: 'Objetivo 45 min',
+                                enabled: true,
+                                position: 'end',
+                                backgroundColor: 'rgba(255,0,0,0.1)',
+                                font: { size: 10 }
+                            }
+                        }
+                    }
+                },
+                // DATALABELS
+                datalabels: {
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    font: { weight: 'bold', size: 11 },
+                    formatter: (value) => `${value.toFixed(1)} min`
                 }
             },
             scales: {
                 y: {
-                    beginAtZero: true
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            if (value >= 60) {
+                                const h = Math.floor(value / 60);
+                                const m = value % 60;
+                                return `${h}h ${m}m`;
+                            }
+                            return `${value} min`;
+                        }
+                    }
                 }
             }
-        })
+        }
     });
 }
 
 function dibujarGraficoRutasDiarias(historial) {
     const ctx = document.getElementById('chartRutasDiarias');
-    
     if (chartRutasDiarias) chartRutasDiarias.destroy();
 
     const fechas = Object.keys(historial).sort();
@@ -557,14 +525,17 @@ function dibujarGraficoRutasDiarias(historial) {
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    display: true
+                legend: { display: true },
+                datalabels: {
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (value) => value || ''
                 }
             },
             scales: {
-                y: {
-                    beginAtZero: true
-                }
+                y: { beginAtZero: true }
             }
         }
     });
@@ -704,8 +675,8 @@ function dibujarGraficoEtapasCriticas(etapas) {
             indexAxis: 'y',
             plugins: {
                 legend: { position: 'bottom' },
-                dataLabels: {
-                    formatter: value => `${value} min`
+                datalabels: {
+                    formatter: (value) => `${value} min`
                 }
             }
         })
@@ -759,7 +730,7 @@ function dibujarGraficoTopRutasLentas(rutas) {
             indexAxis: 'y',
             plugins: {
                 legend: { display: false },
-                dataLabels: {
+                datalabels: {
                     formatter: (value, dataset, index) => {
                         const item = top[index];
                         return item?.tiempo_fmt || `${value} min`;
@@ -796,20 +767,31 @@ function dibujarGraficoEstados(estados) {
     const ctx = document.getElementById('chartEstados');
     if (chartEstados) chartEstados.destroy();
 
+    const labels = ['Activas', 'Completadas', 'Canceladas'];
+    const data = [estados.activa || 0, estados.completada || 0, estados.cancelada || 0];
+    const total = data.reduce((a, b) => a + b, 0);
+
     chartEstados = new Chart(ctx, {
         type: 'doughnut',
         data: {
-            labels: ['Activas', 'Completadas', 'Canceladas'],
+            labels: labels,
             datasets: [{
-                data: [estados.activa || 0, estados.completada || 0, estados.cancelada || 0],
+                data: data,
                 backgroundColor: ['#3498DB', '#70AD47', '#E74C3C']
             }]
         },
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    position: 'bottom'
+                legend: { position: 'bottom' },
+                datalabels: {
+                    color: '#fff',
+                    font: { weight: 'bold', size: 12 },
+                    formatter: (value, context) => {
+                        const pct = total ? (value / total * 100).toFixed(0) : 0;
+                        return `${pct}%\n${value}`;
+                    },
+                    textAlign: 'center'
                 }
             }
         }
@@ -836,14 +818,17 @@ function dibujarGraficoHoras(porHora) {
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    display: false
+                legend: { display: false },
+                datalabels: {
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (value) => value || ''
                 }
             },
             scales: {
-                y: {
-                    beginAtZero: true
-                }
+                y: { beginAtZero: true }
             }
         }
     });
@@ -853,25 +838,36 @@ function dibujarGraficoTiempoCola(stats) {
     const ctx = document.getElementById('chartTiempoCola');
     if (chartTiempoCola) chartTiempoCola.destroy();
 
+    const con = stats.rutas_con_tiempo_en_fila || 0;
+    const sin = stats.rutas_sin_tiempo_en_fila || 0;
+    const total = con + sin;
+
     chartTiempoCola = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: ['Con Tiempo en Fila', 'Sin Tiempo en Fila'],
             datasets: [{
-                data: [stats.rutas_con_tiempo_en_fila || 0, stats.rutas_sin_tiempo_en_fila || 0],
+                data: [con, sin],
                 backgroundColor: ['#70AD47', '#E67E22']
             }]
         },
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    position: 'bottom'
-                },
+                legend: { position: 'bottom' },
                 tooltip: {
                     callbacks: {
                         label: context => `${context.label}: ${context.formattedValue}`
                     }
+                },
+                datalabels: {
+                    color: '#fff',
+                    font: { weight: 'bold', size: 12 },
+                    formatter: (value) => {
+                        const pct = total ? (value / total * 100).toFixed(0) : 0;
+                        return `${pct}%\n${value}`;
+                    },
+                    textAlign: 'center'
                 }
             }
         }
@@ -898,17 +894,10 @@ function dibujarGraficoColaSupervisores(supervisores) {
                     backgroundColor: '#8E44AD'
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true
-                    }
-                }
-            }
+            options: opcionesBase({
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            })
         });
         return;
     }
@@ -927,8 +916,8 @@ function dibujarGraficoColaSupervisores(supervisores) {
             indexAxis: 'y',
             plugins: {
                 legend: { position: 'bottom' },
-                dataLabels: {
-                    formatter: value => `${value} min`
+                datalabels: {
+                    formatter: (value) => `${value} min`
                 },
                 tooltip: {
                     callbacks: {
@@ -941,9 +930,7 @@ function dibujarGraficoColaSupervisores(supervisores) {
                 }
             },
             scales: {
-                x: {
-                    beginAtZero: true
-                }
+                x: { beginAtZero: true }
             }
         })
     });
@@ -954,6 +941,7 @@ function dibujarGraficoEtapasSupervisor(supervisores) {
     if (!ctx) return;
     if (chartEtapasSupervisor) chartEtapasSupervisor.destroy();
 
+    // Filtrar solo los que tienen etapas
     const filtered = supervisores.filter(item => item.etapas && item.etapas.length);
     if (!filtered.length) {
         chartEtapasSupervisor = new Chart(ctx, {
@@ -961,83 +949,131 @@ function dibujarGraficoEtapasSupervisor(supervisores) {
             data: {
                 labels: ['Sin datos'],
                 datasets: [{
-                    label: 'Promedio Etapas (minutos)',
+                    label: 'Promedio (min)',
                     data: [0],
-                    backgroundColor: '#2D9F7C'
+                    backgroundColor: '#ccc'
                 }]
             },
-            options: opcionesBase({ plugins: { legend: { display: false } } })
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { display: false }
+                },
+                scales: {
+                    x: { beginAtZero: true }
+                }
+            }
         });
         return;
     }
 
+    // Orden de etapas deseado
     const stageOrder = ['Matinal', 'Conteo de Carga', 'Check de Salida', 'Botón de Pánico', 'Tiempo en Fila'];
-    const stageNames = Array.from(new Set(filtered.flatMap(item => item.etapas.map(e => e.nombre))));
-    stageNames.sort((a, b) => {
+    // Obtener todos los nombres de etapas únicos
+    const allStageNames = Array.from(new Set(filtered.flatMap(item => item.etapas.map(e => e.nombre))));
+    // Ordenar según stageOrder
+    const stageNames = allStageNames.sort((a, b) => {
         const ai = stageOrder.indexOf(a) === -1 ? stageOrder.length : stageOrder.indexOf(a);
         const bi = stageOrder.indexOf(b) === -1 ? stageOrder.length : stageOrder.indexOf(b);
         return ai - bi;
     });
 
-    const supervisorsTop = filtered
+    // Seleccionar los supervisores con más rutas (top 6)
+    const topSupervisors = filtered
         .slice()
-        .sort((a, b) => b.promedio - a.promedio)
+        .sort((a, b) => b.rutas - a.rutas)
         .slice(0, 6);
 
+    // Colores para cada etapa (paleta amigable)
+    const colors = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47', '#E74C3C'];
+
+    // Crear datasets: uno por cada etapa
     const datasets = stageNames.map((stageName, index) => ({
         label: stageName,
-        data: supervisorsTop.map(supervisor => {
+        data: topSupervisors.map(supervisor => {
             const etapa = supervisor.etapas.find(e => e.nombre === stageName);
             return etapa ? minutosDesdeSegundos(etapa.promedio) : 0;
         }),
-        backgroundColor: chartPalette[index % chartPalette.length]
+        backgroundColor: colors[index % colors.length],
+        borderColor: colors[index % colors.length],
+        borderWidth: 1,
+        // Para barras agrupadas horizontales
+        barPercentage: 0.8,
+        categoryPercentage: 0.7
     }));
 
     chartEtapasSupervisor = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: supervisorsTop.map(item => item.nombre),
-            datasets
+            labels: topSupervisors.map(item => item.nombre),
+            datasets: datasets
         },
-        options: opcionesBase({
-            indexAxis: 'y',
-            scales: {
-                x: {
-                    stacked: true,
-                    beginAtZero: true
-                },
-                y: {
-                    stacked: true
-                }
-            },
+        options: {
+            indexAxis: 'y', // <-- CLAVE: barras horizontales
+            responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
-                },
-                dataLabels: {
-                    formatter: value => `${value} min`
+                    position: 'bottom',
+                    labels: {
+                        boxWidth: 12,
+                        padding: 10,
+                        font: { size: 10 }
+                    }
                 },
                 tooltip: {
                     callbacks: {
-                        label: context => `${context.dataset.label}: ${context.formattedValue} min`
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.x.toFixed(1)} min`;
+                        }
+                    }
+                },
+                // Etiquetas de datos SIEMPRE visibles
+                datalabels: {
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    font: { weight: 'bold', size: 9 },
+                    formatter: function(value) {
+                        return value > 0 ? value.toFixed(1) + ' min' : '';
+                    },
+                    display: function(context) {
+                        return context.dataset.data[context.dataIndex] > 0;
+                    },
+                    offset: 2
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    grid: { color: '#edf1f7' },
+                    ticks: {
+                        callback: function(value) {
+                            return value + ' min';
+                        },
+                        font: { size: 9 }
+                    }
+                },
+                y: {
+                    grid: { display: false },
+                    ticks: {
+                        font: { size: 10, weight: 'bold' },
+                        maxRotation: 0,
+                        autoSkip: false
                     }
                 }
             }
-        })
+        }
     });
 
+    // Metainfo para el modal de ampliación
     chartEtapasSupervisor.metaInfo = {
         title: 'Etapas por Supervisor',
-        subtitle: 'Comparación de tiempos promedio por etapa para supervisores más representativos.',
-        description: 'Sirve para identificar qué supervisores tienen etapas específicas más lentas.',
-        summary: supervisorsTop.length ? `Supervisor puntero: ${supervisorsTop[0].nombre} con ${supervisorsTop[0].promedio_fmt}.` : 'No hay datos suficientes.',
-        badges: ['Etapas', 'Supervisor', 'Auditoría'],
-        listTitle: 'Supervisores principales',
-        items: supervisorsTop.slice(0, 5).map(item => ({
-            label: item.nombre,
-            value: item.promedio_fmt,
-            note: `Fila promedio: ${item.promedio_cola_fmt}`
-        }))
+        subtitle: 'Tiempos promedio por etapa (barras horizontales agrupadas)',
+        description: 'Permite comparar fácilmente cada etapa entre supervisores.',
+        summary: topSupervisors.length ? `Supervisor con más rutas: ${topSupervisors[0].nombre}` : 'Sin datos.',
+        badges: ['Etapas', 'Supervisor', 'Auditoría']
     };
 }
 
@@ -1092,8 +1128,34 @@ function dibujarGraficoCumplimientoSupervisores(supervisores) {
                 }
             ]
         },
-        options: opcionesBase({
+        options: {
             responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: context => {
+                            if (context.dataset.type === 'line') {
+                                return `${context.dataset.label}: ${context.formattedValue}%`;
+                            }
+                            return `${context.dataset.label}: ${context.formattedValue}`;
+                        }
+                    }
+                },
+                // DATALABELS para barras y línea
+                datalabels: {
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (value, context) => {
+                        if (context.dataset.type === 'line') {
+                            return value + '%';
+                        }
+                        return value;
+                    }
+                }
+            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -1106,21 +1168,8 @@ function dibujarGraficoCumplimientoSupervisores(supervisores) {
                     grid: { drawOnChartArea: false },
                     ticks: { callback: value => `${value}%` }
                 }
-            },
-            plugins: {
-                legend: { position: 'bottom' },
-                tooltip: {
-                    callbacks: {
-                        label: context => {
-                            if (context.dataset.type === 'line') {
-                                return `${context.dataset.label}: ${context.formattedValue}%`;
-                            }
-                            return `${context.dataset.label}: ${context.formattedValue}`;
-                        }
-                    }
-                }
             }
-        })
+        }
     });
 
     chartCumplimientoSupervisores.metaInfo = {
@@ -1163,9 +1212,7 @@ function dibujarGraficoRanking(canvasId, chartActual, datos, label, asignarChart
             indexAxis: 'y',
             responsive: true,
             plugins: {
-                legend: {
-                    position: 'bottom'
-                },
+                legend: { position: 'bottom' },
                 tooltip: {
                     callbacks: {
                         afterLabel: context => {
@@ -1173,12 +1220,18 @@ function dibujarGraficoRanking(canvasId, chartActual, datos, label, asignarChart
                             return `${label}: ${item.tasa}% completacion · promedio ${item.promedio_fmt}`;
                         }
                     }
+                },
+                // DATALABELS
+                datalabels: {
+                    color: '#1f2937',
+                    anchor: 'end',
+                    align: 'end',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (value) => value || ''
                 }
             },
             scales: {
-                x: {
-                    beginAtZero: true
-                }
+                x: { beginAtZero: true }
             }
         }
     });
@@ -1242,13 +1295,13 @@ async function cargarRutas() {
 
         let url = `${ADMIN_BASE}/rutas-con-etapas`;
         const params = new URLSearchParams();
-        
+
         if (usuario) params.append('usuario_id', usuario);
         if (estado) params.append('estado', estado);
         if (fecha) params.append('fecha', fecha);
         if (supervisor) params.append('supervisor', supervisor);
         if (contratista) params.append('contratista', contratista);
-        
+
         if (params.toString()) url += '?' + params.toString();
 
         const response = await fetchAdmin(url);
@@ -1263,9 +1316,9 @@ async function cargarRutas() {
 
         rutas.forEach(ruta => {
             const row = document.createElement('tr');
-            
+
             const etapasHtml = ruta.etapas.map(e => e.duracion_formateada).join(' | ');
-            
+
             row.innerHTML = `
                 <td>${ruta.id}</td>
                 <td>${ruta.numero_ruta}</td>
@@ -1286,7 +1339,7 @@ async function cargarRutas() {
                     ${rolActual === 'admin' ? `<button class="btn btn-danger" onclick="eliminarRuta(${ruta.id})">Eliminar</button>` : ''}
                 </td>
             `;
-            
+
             bodyTablaRutas.appendChild(row);
         });
     } catch (error) {
@@ -1316,7 +1369,7 @@ function verDetallesRuta(rutaId) {
                         </thead>
                         <tbody>
             `;
-            
+
             ruta.etapas.forEach(etapa => {
                 html += `
                     <tr>
@@ -1326,13 +1379,13 @@ function verDetallesRuta(rutaId) {
                     </tr>
                 `;
             });
-            
+
             html += `
                         </tbody>
                     </table>
                 </div>
             `;
-            
+
             detallesRutaContenido.innerHTML = html;
             modalDetallesRuta.style.display = 'block';
         });
@@ -1568,13 +1621,13 @@ async function descargarExcel() {
 
         let url = `${ADMIN_BASE}/descargar-excel`;
         const params = new URLSearchParams();
-        
+
         if (usuario) params.append('usuario_id', usuario);
         if (estado) params.append('estado', estado);
         if (fecha) params.append('fecha', fecha);
         if (supervisor) params.append('supervisor', supervisor);
         if (contratista) params.append('contratista', contratista);
-        
+
         if (params.toString()) url += '?' + params.toString();
 
         window.location.href = url;
@@ -1603,7 +1656,7 @@ async function cargarReportes() {
         Object.keys(etapas).forEach(nombre => {
             const data = etapas[nombre];
             const row = document.createElement('tr');
-            
+
             row.innerHTML = `
                 <td>${nombre}</td>
                 <td>${formatearSegundos(data.promedio)}</td>
@@ -1611,7 +1664,7 @@ async function cargarReportes() {
                 <td>${formatearSegundos(data.maximo)}</td>
                 <td>${data.cantidad}</td>
             `;
-            
+
             bodyTablaReportes.appendChild(row);
         });
 
@@ -1624,7 +1677,6 @@ async function cargarReportes() {
 
 function dibujarGraficoComparativa(etapas) {
     const ctx = document.getElementById('chartComparativa');
-    
     if (chartComparativa) chartComparativa.destroy();
 
     const labels = Object.keys(etapas);
@@ -1660,8 +1712,13 @@ function dibujarGraficoComparativa(etapas) {
         options: {
             responsive: true,
             plugins: {
-                legend: {
-                    display: true
+                legend: { display: true },
+                datalabels: {
+                    color: '#1f2937',
+                    font: { weight: 'bold', size: 10 },
+                    formatter: (value) => value + ' min',
+                    anchor: 'end',
+                    align: 'end'
                 }
             },
             scales: {
@@ -1672,6 +1729,130 @@ function dibujarGraficoComparativa(etapas) {
         }
     });
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Elementos
+    const btnImportar = document.getElementById('btnImportarFijas');
+    const btnSeed = document.getElementById('btnSeedJunio');
+    const btnLimpiar = document.getElementById('btnLimpiarDatos');
+    const importStatus = document.getElementById('importStatus');
+    const seedStatus = document.getElementById('seedStatus');
+    const cleanStatus = document.getElementById('cleanStatus');
+    const btnReiniciarDB = document.getElementById('btnReiniciarDB');
+    const reiniciarStatus = document.getElementById('reiniciarStatus');
+
+    btnReiniciarDB.addEventListener('click', function () {
+        if (!confirm('⚠️ ¡ADVERTENCIA! Esta acción eliminará TODOS los datos (rutas, etapas, rutas fijas) y luego reimportará las rutas fijas desde el Excel. ¿Estás seguro?')) {
+            return;
+        }
+        const confirmacion = prompt('Escribe "REINICIAR" para confirmar la operación:');
+        if (confirmacion !== 'REINICIAR') {
+            reiniciarStatus.textContent = '❌ Operación cancelada.';
+            reiniciarStatus.className = 'status-msg error';
+            return;
+        }
+
+        reiniciarStatus.textContent = '⏳ Reiniciando base de datos...';
+        reiniciarStatus.className = 'status-msg loading';
+        btnReiniciarDB.disabled = true;
+
+        fetch(`${ADMIN_BASE}/reiniciar-db`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmacion: 'REINICIAR' })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.mensaje) {
+                    const det = data.detalles || {};
+                    let msg = `✅ ${data.mensaje}`;
+                    msg += ` Rutas eliminadas: ${det.rutas_eliminadas || 0}, Etapas: ${det.etapas_eliminadas || 0}, Rutas fijas eliminadas: ${det.rutas_fijas_eliminadas || 0}. `;
+                    msg += `Importación: ${det.importacion || 'N/A'}`;
+                    reiniciarStatus.textContent = msg;
+                    reiniciarStatus.className = 'status-msg success';
+                    cargarRutas();
+                    cargarRutasFijas();
+                    cargarDashboard();
+                    cargarOpcionesFiltros();
+                } else {
+                    reiniciarStatus.textContent = `❌ Error: ${data.error || 'Error desconocido'}`;
+                    reiniciarStatus.className = 'status-msg error';
+                }
+            })
+            .catch(error => {
+                reiniciarStatus.textContent = `❌ Error de conexión: ${error.message}`;
+                reiniciarStatus.className = 'status-msg error';
+            })
+            .finally(() => {
+                btnReiniciarDB.disabled = false;
+            });
+    });
+
+    async function ejecutarPeticion(url, btn, statusElement, mensajeExito) {
+        btn.disabled = true;
+        statusElement.textContent = '⏳ Procesando...';
+        statusElement.className = 'status-msg loading';
+
+        try {
+            const res = await fetch(url, { method: 'POST' });
+            const data = await res.json();
+
+            if (res.ok) {
+                let mensaje = data.mensaje || mensajeExito;
+                if (data.rutas_creadas) {
+                    mensaje += ` (${data.rutas_creadas} rutas en ${data.dias_habiles} días)`;
+                } else if (data.importadas !== undefined) {
+                    mensaje += ` (importadas: ${data.importadas}, actualizadas: ${data.actualizadas})`;
+                } else if (data.rutas_eliminadas !== undefined) {
+                    mensaje += ` (${data.rutas_eliminadas} rutas eliminadas)`;
+                }
+                statusElement.textContent = `✅ ${mensaje}`;
+                statusElement.className = 'status-msg success';
+            } else {
+                statusElement.textContent = `❌ Error: ${data.error || 'Error desconocido'}`;
+                statusElement.className = 'status-msg error';
+            }
+        } catch (error) {
+            statusElement.textContent = `❌ Error de conexión: ${error.message}`;
+            statusElement.className = 'status-msg error';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    btnImportar.addEventListener('click', function () {
+        ejecutarPeticion(
+            `${ADMIN_BASE}/importar-rutas-fijas`,
+            btnImportar,
+            importStatus,
+            'Rutas fijas importadas correctamente'
+        );
+    });
+
+    btnSeed.addEventListener('click', function () {
+        if (!confirm('¿Estás seguro de que deseas generar rutas de prueba para junio? Se agregarán datos a la base de datos.')) {
+            return;
+        }
+        ejecutarPeticion(
+            `${ADMIN_BASE}/seed-junio`,
+            btnSeed,
+            seedStatus,
+            'Seeder ejecutado correctamente'
+        );
+    });
+
+    btnLimpiar.addEventListener('click', function () {
+        if (!confirm('⚠️ ¿Estás seguro? Se eliminarán TODAS las rutas y sus etapas. Esta acción no se puede deshacer.')) {
+            return;
+        }
+        ejecutarPeticion(
+            `${ADMIN_BASE}/limpiar-datos`,
+            btnLimpiar,
+            cleanStatus,
+            'Datos eliminados correctamente'
+        );
+    });
+});
 
 // Cargar seccion inicial
 inicializarControlesGraficos();
@@ -1706,12 +1887,10 @@ let _editarRutaId = null;
     `;
     document.body.appendChild(modal);
 
-    // Cerrar al hacer clic fuera
     modal.addEventListener('click', (e) => {
         if (e.target === modal) cerrarModalEditarRuta();
     });
 
-    // Estilos exclusivos del modal de edición
     const style = document.createElement('style');
     style.textContent = `
         #modalEditarRuta .modal-content { max-width: 680px; }
@@ -1812,13 +1991,12 @@ let _editarRutaId = null;
     document.head.appendChild(style);
 })();
 
-// — Utilidades de formato —
 function _segundosAHHMMSS(s) {
     const total = parseInt(s) || 0;
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
     const sec = total % 60;
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 }
 
 function _hhmmssASegundos(str) {
@@ -1830,14 +2008,12 @@ function _hhmmssASegundos(str) {
     return parseInt(str) || null;
 }
 
-// — Abrir modal con datos cargados —
 async function editarRuta(rutaId) {
     try {
         const res = await fetchAdmin(`${API_BASE}/rutas/${rutaId}`);
         const ruta = await res.json();
         _editarRutaId = rutaId;
 
-        // Fecha para el input datetime-local (YYYY-MM-DDTHH:MM)
         const fechaISO = ruta.fecha ? ruta.fecha.slice(0, 16) : '';
 
         const etapasRows = (ruta.etapas || []).map(etapa => `
@@ -1871,9 +2047,9 @@ async function editarRuta(rutaId) {
                     <div class="edit-field">
                         <label>Estado</label>
                         <select id="editEstado">
-                            <option value="activa"     ${ruta.estado === 'activa'      ? 'selected' : ''}>Activa</option>
-                            <option value="completada" ${ruta.estado === 'completada'  ? 'selected' : ''}>Completada</option>
-                            <option value="cancelada"  ${ruta.estado === 'cancelada'   ? 'selected' : ''}>Cancelada</option>
+                            <option value="activa"     ${ruta.estado === 'activa' ? 'selected' : ''}>Activa</option>
+                            <option value="completada" ${ruta.estado === 'completada' ? 'selected' : ''}>Completada</option>
+                            <option value="cancelada"  ${ruta.estado === 'cancelada' ? 'selected' : ''}>Cancelada</option>
                         </select>
                     </div>
                     <div class="edit-field">
@@ -1916,7 +2092,6 @@ function cerrarModalEditarRuta() {
 async function guardarEdicionRuta() {
     if (!_editarRutaId) return;
 
-    // — Recolectar etapas —
     const etapas = [];
     document.querySelectorAll('#editarRutaContenido .etapa-duracion').forEach(input => {
         const nombre = input.dataset.nombre;
@@ -1933,8 +2108,8 @@ async function guardarEdicionRuta() {
 
     const payload = {
         estado: document.getElementById('editEstado').value,
-        notas:  document.getElementById('editNotas').value.trim(),
-        fecha:  document.getElementById('editFecha').value || undefined,
+        notas: document.getElementById('editNotas').value.trim(),
+        fecha: document.getElementById('editFecha').value || undefined,
         etapas
     };
 
@@ -1948,13 +2123,11 @@ async function guardarEdicionRuta() {
 
         cerrarModalEditarRuta();
 
-        // Refrescar la vista activa
         const seccionActiva = document.querySelector('.content-section.active')?.id;
-        if (seccionActiva === 'rutas')     await cargarRutas();
+        if (seccionActiva === 'rutas') await cargarRutas();
         if (seccionActiva === 'historial') await cargarHistorialAdmin();
         if (seccionActiva === 'dashboard') await cargarDashboard();
 
-        // Toast de confirmación
         const toast = document.createElement('div');
         toast.textContent = `✓ Ruta actualizada correctamente`;
         Object.assign(toast.style, {

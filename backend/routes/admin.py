@@ -54,7 +54,7 @@ def seed_junio():
     RANGOS = {
         'Matinal': (900, 1020),
         'Conteo de Carga': (720, 1200),
-        'Check de Salida': (45, 80),
+        'Check de Salida': (220, 300),
         'Botón de Pánico': (20, 60),
         'Tiempo en Fila': (120, 360),
     }

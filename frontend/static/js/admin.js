@@ -442,7 +442,7 @@ function dibujarGraficoPromedios(etapas) {
                             const horas = Math.floor(segundos / 3600);
                             const minutos = Math.floor((segundos % 3600) / 60);
                             const segs = Math.round(segundos % 60);
-                            return `Equivale a ${horas}:${minutos.toString().padStart(2,'0')}:${segs.toString().padStart(2,'0')}`;
+                            return `Equivale a ${horas}:${minutos.toString().padStart(2,'0')}:${segs.toString().padStart(1,'0')}`;
                         }
                     }
                 },

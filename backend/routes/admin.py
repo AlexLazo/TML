@@ -76,7 +76,7 @@ def seed_junio():
 
     rutas_creadas = 0
     for dia in dias_habiles:
-        num_rutas_dia = random.randint(25, 28)
+        num_rutas_dia = random.randint(53, 70)
         seleccion = random.choices(rutas_fijas, k=num_rutas_dia)
 
         for ruta_fija in seleccion:

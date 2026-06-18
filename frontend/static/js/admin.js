@@ -430,6 +430,16 @@ function dibujarGraficoPromedios(etapas) {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
+            clip: false,   // <-- CLAVE: evita recorte de etiquetas
+            layout: {
+                padding: {
+                    top: 30,
+                    right: 30,
+                    bottom: 30,
+                    left: 30
+                }
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -442,7 +452,7 @@ function dibujarGraficoPromedios(etapas) {
                             const horas = Math.floor(segundos / 3600);
                             const minutos = Math.floor((segundos % 3600) / 60);
                             const segs = Math.round(segundos % 60);
-                            return `Equivale a ${horas}:${minutos.toString().padStart(1,'0')}:${segs.toString().padStart(1,'0')}`;
+                            return `Equivale a ${horas}:${minutos.toString().padStart(2,'0')}:${segs.toString().padStart(2,'0')}`;
                         }
                     }
                 },
@@ -465,13 +475,18 @@ function dibujarGraficoPromedios(etapas) {
                         }
                     }
                 },
-                // DATALABELS
+                // DATALABELS CONFIGURACIÓN MEJORADA
                 datalabels: {
                     color: '#1f2937',
                     anchor: 'end',
                     align: 'end',
-                    font: { weight: 'bold', size: 11 },
-                    formatter: (value) => `${value.toFixed(1)} min`
+                    offset: 4,
+                    font: { weight: 'bold', size: 12 },
+                    formatter: (value) => `${value.toFixed(1)} min`,
+                    // Mostrar siempre que el valor sea > 0
+                    display: function(context) {
+                        return context.dataset.data[context.dataIndex] > 0;
+                    }
                 }
             },
             scales: {
@@ -491,6 +506,10 @@ function dibujarGraficoPromedios(etapas) {
             }
         }
     });
+
+    // Forzar redibujado
+    chartPromedios.resize();
+    chartPromedios.update();
 }
 
 function dibujarGraficoRutasDiarias(historial) {
